@@ -1,0 +1,6 @@
+{
+  "name": "PSITS Acquaintance Party",
+  "description": "Onboarding, attendee management, and mythical creature group assignment system for the PSITS CCS Department, College of Computer Studies Acquaintance Party.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

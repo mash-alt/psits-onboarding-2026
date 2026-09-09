@@ -1,0 +1,238 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    border-color: #000000;
+  }
+  body {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 700;
+    background-color: #FFFDF5;
+    color: #000000;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  body.theme-retro1997 {
+    font-family: 'MS Sans Serif', Tahoma, 'Segoe UI', Arial, sans-serif;
+    background-color: #C0C0C0;
+    color: #000000;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+  }
+  .theme-retro1997 h1,
+  .theme-retro1997 h2,
+  .theme-retro1997 h3,
+  .theme-retro1997 h4,
+  .theme-retro1997 h5,
+  .theme-retro1997 h6 {
+    font-family: 'MS Sans Serif', Tahoma, 'Segoe UI', Arial, sans-serif;
+    font-weight: 700;
+    letter-spacing: normal;
+  }
+}
+
+/* =====================================================================
+   NEO-BRUTALIST UTILITIES
+   ===================================================================== */
+.neo-shadow {
+  box-shadow: 4px 4px 0px #000000;
+}
+.neo-shadow-lg {
+  box-shadow: 8px 8px 0px #000000;
+}
+.neo-shadow-xl {
+  box-shadow: 12px 12px 0px #000000;
+}
+.neo-shadow-sm {
+  box-shadow: 2px 2px 0px #000000;
+}
+.neo-shadow-red {
+  box-shadow: 6px 6px 0px #FF6B6B;
+}
+.neo-shadow-yellow {
+  box-shadow: 6px 6px 0px #FFD93D;
+}
+.neo-shadow-violet {
+  box-shadow: 6px 6px 0px #C4B5FD;
+}
+
+.bg-grid-pattern {
+  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, rgba(0, 0, 0, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.12) 1px, transparent 1px);
+}
+.bg-dot-pattern {
+  background-image: radial-gradient(#000000 1.5px, transparent 1.5px);
+  background-size: 16px 16px;
+}
+.bg-hazard-stripes {
+  background: repeating-linear-gradient(
+    -45deg,
+    #FFD93D,
+    #FFD93D 12px,
+    #000000 12px,
+    #000000 24px
+  );
+}
+.bg-hazard-stripes-red {
+  background: repeating-linear-gradient(
+    -45deg,
+    #FF6B6B,
+    #FF6B6B 12px,
+    #000000 12px,
+    #000000 24px
+  );
+}
+
+/* =====================================================================
+   RETRO 1997 WINDOWS 95 / CLASSIC WEB UTILITIES
+   ===================================================================== */
+.retro-window {
+  background-color: #C0C0C0;
+  border-top: 2px solid #FFFFFF;
+  border-left: 2px solid #FFFFFF;
+  border-right: 2px solid #000000;
+  border-bottom: 2px solid #000000;
+  box-shadow: inset 1px 1px 0px #DFDFDF, inset -1px -1px 0px #808080;
+}
+
+.retro-titlebar {
+  background: linear-gradient(90deg, #000080 0%, #1084d0 100%);
+  color: #FFFFFF;
+  font-family: 'MS Sans Serif', Tahoma, 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 3px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  letter-spacing: 0.5px;
+}
+
+.retro-titlebar-btn {
+  width: 16px;
+  height: 14px;
+  background: #C0C0C0;
+  border-top: 1px solid #FFFFFF;
+  border-left: 1px solid #FFFFFF;
+  border-right: 1px solid #000000;
+  border-bottom: 1px solid #000000;
+  color: #000000;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.retro-button {
+  background: #C0C0C0;
+  color: #000000;
+  border-top: 2px solid #FFFFFF;
+  border-left: 2px solid #FFFFFF;
+  border-right: 2px solid #000000;
+  border-bottom: 2px solid #000000;
+  box-shadow: inset 1px 1px 0px #DFDFDF, inset -1px -1px 0px #808080;
+  font-family: 'MS Sans Serif', Tahoma, 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 4px 12px;
+  outline: none;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.retro-button:active,
+.retro-button-active {
+  border-top: 2px solid #000000;
+  border-left: 2px solid #000000;
+  border-right: 2px solid #FFFFFF;
+  border-bottom: 2px solid #FFFFFF;
+  box-shadow: inset 1px 1px 0px #808080;
+  padding: 5px 11px 3px 13px;
+}
+
+.retro-button-primary {
+  background: #000080;
+  color: #FFFFFF;
+  border-top: 2px solid #6090E0;
+  border-left: 2px solid #6090E0;
+  border-right: 2px solid #000030;
+  border-bottom: 2px solid #000030;
+}
+
+.retro-inset {
+  background-color: #FFFFFF;
+  border-top: 2px solid #808080;
+  border-left: 2px solid #808080;
+  border-right: 2px solid #FFFFFF;
+  border-bottom: 2px solid #FFFFFF;
+  box-shadow: inset 1px 1px 0px #000000;
+}
+
+.retro-outset {
+  background-color: #C0C0C0;
+  border-top: 2px solid #FFFFFF;
+  border-left: 2px solid #FFFFFF;
+  border-right: 2px solid #808080;
+  border-bottom: 2px solid #808080;
+}
+
+.retro-statusbar {
+  background-color: #C0C0C0;
+  border-top: 2px solid #808080;
+  font-size: 11px;
+  font-family: 'MS Sans Serif', Tahoma, 'Segoe UI', Arial, sans-serif;
+  color: #000000;
+}
+
+/* Mode overrides for retro theme to tone down high-contrast neo-brutalist shadows/borders */
+.theme-retro1997 .neo-shadow,
+.theme-retro1997 .neo-shadow-lg,
+.theme-retro1997 .neo-shadow-xl,
+.theme-retro1997 .neo-shadow-sm,
+.theme-retro1997 .neo-shadow-yellow,
+.theme-retro1997 .neo-shadow-red,
+.theme-retro1997 .neo-shadow-violet {
+  box-shadow: none !important;
+}
+
+.theme-retro1997 .bg-hazard-stripes,
+.theme-retro1997 .bg-hazard-stripes-red {
+  background: #000080 !important;
+  color: #FFFFFF !important;
+}
+
+.theme-retro1997 .bg-grid-pattern,
+.theme-retro1997 .bg-dot-pattern {
+  background-image: none !important;
+}
+
+/* Marquee animation */
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 25s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+.theme-retro1997 .animate-marquee {
+  animation: none !important;
+}
