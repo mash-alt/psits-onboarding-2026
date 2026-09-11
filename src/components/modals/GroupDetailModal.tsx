@@ -3,8 +3,7 @@ import { MythicalCreatureGroup } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { Users, Cpu, Sparkles, Shield, Bookmark, CheckCircle2 } from 'lucide-react';
-import { MOCK_ATTENDEES } from '../../data/mockAttendees';
+import { Users, Cpu, Sparkles, Shield, Bookmark } from 'lucide-react';
 
 export interface GroupDetailModalProps {
   group: MythicalCreatureGroup | null;
@@ -20,11 +19,6 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({
   onViewRoster,
 }) => {
   if (!group) return null;
-
-  // Find sample attendees in this group
-  const assignedAttendees = MOCK_ATTENDEES.filter(
-    (att) => att.groupAssignment?.toLowerCase() === group.name.toLowerCase()
-  );
 
   return (
     <Modal
@@ -115,7 +109,7 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Group Roster Status & Sample Members */}
+        {/* Group Roster Status */}
         <div className="border-4 border-black bg-white p-4 shadow-[4px_4px_0px_#000000] space-y-3">
           <div className="flex items-center justify-between border-b-2 border-black pb-2">
             <span className="text-xs font-mono font-black uppercase flex items-center gap-1.5">
@@ -127,34 +121,9 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({
             </span>
           </div>
 
-          <div className="space-y-1.5">
-            <span className="text-[11px] font-mono font-bold text-gray-600 uppercase">
-              CONFIRMED MEMBERS SAMPLE:
-            </span>
-            {assignedAttendees.length > 0 ? (
-              <div className="space-y-1">
-                {assignedAttendees.map((att) => (
-                  <div
-                    key={att.id}
-                    className="p-2 bg-[#FFFDF5] border-2 border-black flex items-center justify-between text-xs font-bold"
-                  >
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600 stroke-[3]" />
-                      <span className="font-black uppercase">{att.fullName}</span>
-                      <span className="text-gray-500 font-mono">({att.section})</span>
-                    </div>
-                    <span className="font-mono text-[10px] bg-black text-white px-1.5 py-0.5">
-                      {att.yearLevel}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs font-bold text-gray-500 uppercase italic">
-                Active attendees registered in the database.
-              </p>
-            )}
-          </div>
+          <p className="text-[11px] font-mono font-bold text-gray-600 uppercase">
+            Open the group roster to view the current Firestore-backed assignment list.
+          </p>
         </div>
 
         {/* Group Info Stamp */}

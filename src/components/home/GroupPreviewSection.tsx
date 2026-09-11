@@ -229,27 +229,6 @@ export const GroupPreviewSection: React.FC<GroupPreviewSectionProps> = ({ onSele
           })}
         </div>
 
-        {/* Bottom Banner Notice */}
-        <div className="mt-12 p-6 bg-black text-[#FFD93D] border-4 border-black shadow-[8px_8px_0px_#FFD93D] flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#FFD93D] text-black font-black flex items-center justify-center border-2 border-black text-lg">
-              !
-            </div>
-            <div>
-              <h4 className="text-base sm:text-lg font-black uppercase tracking-tight text-white">
-                OFFICIAL 12 MYTHICAL CREATURE GROUPS
-              </h4>
-              <p className="text-xs font-bold text-gray-300 uppercase">
-                All activities, chants, scores, and attendee rosters are organized strictly under these 12
-                official Mythical Creature Groups.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-[#FF6B6B] text-black font-black text-xs uppercase px-4 py-2 border-3 border-black shadow-[3px_3px_0px_#000000]">
-            PSITS CONST. SEC 12
-          </div>
-        </div>
       </div>
     </section>
   );

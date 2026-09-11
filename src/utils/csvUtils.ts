@@ -72,7 +72,7 @@ export function exportAttendeesToCSV(
 }
 
 /**
- * Generates and downloads a sample formatted CSV template for attendee imports
+ * Generates and downloads an empty formatted CSV template for attendee imports.
  */
 export function generateAttendeeCSVTemplate(): { success: boolean; filename: string } {
   const headers = [
@@ -88,18 +88,7 @@ export function generateAttendeeCSVTemplate(): { success: boolean; filename: str
     'Mythical Creature Group',
   ];
 
-  const sampleRows = [
-    ['20240101', 'Santos, Maria Elena', 'BS Information Technology', 'BSIT-1A', '1st Year', 'EARLY BIRD', '350', 'PAID', '2026-08-25', 'Tikbalang'],
-    ['20230245', 'Dela Cruz, Juan Paolo', 'BS Computer Science', 'BSCS-2B', '2nd Year', 'REGULAR', '450', 'PAID', '2026-09-02', 'Aswang'],
-    ['20220389', 'Villanueva, Carlos Joshua', 'BS Information Systems', 'BSIS-3A', '3rd Year', 'REGULAR', '0', 'UNPAID', '', 'Kapre'],
-    ['20250412', 'Bautista, Alyssa Joy', 'BS Information Technology', 'BSIT-1B', '1st Year', 'EARLY BIRD', '350', 'PAID', '2026-08-28', 'Diwata'],
-    ['20210567', 'Ramos, Patricia Gail', 'BS Computer Science', 'BSCS-4A', '4th Year', 'REGULAR', '450', 'PAID', '2026-09-04', 'Sigbin'],
-  ];
-
-  const csvContent = [
-    headers.join(','),
-    ...sampleRows.map((r) => r.map(escapeCSVValue).join(',')),
-  ].join('\r\n');
+  const csvContent = headers.join(',');
 
   const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
   const filename = 'PSITS_Attendee_Import_Template.csv';

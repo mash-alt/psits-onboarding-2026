@@ -31,7 +31,7 @@ export interface ImportAttendeesModalProps {
   onImportSuccess: (
     importedAttendees: AttendeeRegistration[],
     overwriteExisting: boolean
-  ) => { added: number; updated: number; total: number };
+  ) => Promise<{ added: number; updated: number; total: number }>;
 }
 
 type TabType = 'FILE_UPLOAD' | 'PASTE_TEXT' | 'TEMPLATE_GUIDE';
@@ -138,7 +138,7 @@ export const ImportAttendeesModal: React.FC<ImportAttendeesModalProps> = ({
     }
   };
 
-  const handleExecuteImport = () => {
+  const handleExecuteImport = async () => {
     if (!parseResult || parseResult.validCount === 0) return;
 
     setIsProcessing(true);
@@ -148,7 +148,7 @@ export const ImportAttendeesModal: React.FC<ImportAttendeesModalProps> = ({
         .filter((r) => r.isValid && r.record)
         .map((r) => r.record!);
 
-      const stats = onImportSuccess(validRecords, overwriteExisting);
+      const stats = await onImportSuccess(validRecords, overwriteExisting);
       setImportSummary(stats);
     } catch (err) {
       console.error('Failed to import attendees:', err);
@@ -480,7 +480,7 @@ export const ImportAttendeesModal: React.FC<ImportAttendeesModalProps> = ({
                       <tr>
                         <td className="p-2 border-r border-black font-black">Mythical Creature Group</td>
                         <td className="p-2 border-r border-black text-gray-500">OPTIONAL</td>
-                        <td className="p-2 border-r border-black text-gray-700">One of 12 official groups: Kapre, Sigbin, Aswang, Tikbalang, Chanak, Shokoy, Manananggal, Duwende, Magkukulam, Sirena, Diwata, Otlum</td>
+                        <td className="p-2 border-r border-black text-gray-700">One of 12 official groups: Kapre, Sigbin, Aswang, Tikbalang, Chanak, Shokoy, Manananggal, Duwende, Mangkukulam, Sirena, Diwata, Otlum</td>
                         <td className="p-2">Tikbalang</td>
                       </tr>
                     </tbody>

@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for Authentication & Role-Based Access Control
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getUserRole() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? getUserData().role
+        : 'student';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (getUserRole() == 'admin' || getUserRole() == 'ADMIN');
+    }
+
+    function isOfficer() {
+      return isAuthenticated() && (getUserRole() == 'officer' || getUserRole() == 'OFFICER' || isAdmin());
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isOfficialGroup(groupId) {
+      return groupId in ['kapre', 'sigbin', 'aswang', 'tikbalang', 'chanak', 'shokoy', 'manananggal', 'duwende', 'mangkukulam', 'sirena', 'diwata', 'otlum'];
+    }
+
+    function hasRegistrationShape() {
+      return request.resource.data.keys().hasOnly([
+        'id', 'userId', 'studentId', 'name', 'section', 'year', 'course',
+        'registrationType', 'expectedAmount', 'actualAmount', 'datePaid',
+        'paymentStatus', 'groupId', 'registeredAt', 'registeredBy',
+        'updatedAt', 'updatedBy'
+      ]);
+    }
+
+    // USERS COLLECTION: users/{uid}
+    match /users/{uid} {
+      // Any authenticated user can read their own profile; Officers & Admins can read all users
+      allow read: if isOwner(uid) || isOfficer();
+
+      // Public sign-up can only create its own student profile. Privileged roles
+      // are provisioned by an already-authorized administrator.
+      allow create: if (isOwner(uid) && request.resource.data.role == 'student'
+                        && request.resource.data.status == 'ACTIVE') || isAdmin();
+
+      // Users can update non-privileged fields on their own profile
+      // Only Admins can modify 'role' and 'status'
+      allow update: if (isOwner(uid) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']))
+                    || isAdmin();
+
+      // Only Admins can delete users
+      allow delete: if isAdmin();
+    }
+
+    // ATTENDEES COLLECTION: attendees/{attendeeId}
+    match /attendees/{attendeeId} {
+      allow read: if isAuthenticated() && (isOfficer() || resource.data.userId == request.auth.uid);
+
+      allow create: if isAuthenticated() && hasRegistrationShape() &&
+        request.resource.data.id == attendeeId &&
+        request.resource.data.studentId == attendeeId &&
+        request.resource.data.studentId is string &&
+        request.resource.data.studentId.matches('^[0-9]{8}$') &&
+        request.resource.data.groupId is string && isOfficialGroup(request.resource.data.groupId) &&
+        (isOfficer() || (
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.expectedAmount is number &&
+          request.resource.data.actualAmount == request.resource.data.expectedAmount &&
+          request.resource.data.expectedAmount == (request.resource.data.registrationType == 'EARLY BIRD'
+            ? get(/databases/$(database)/documents/settings/event).data.earlyBirdPrice
+            : get(/databases/$(database)/documents/settings/event).data.regularPrice)
+        ));
+
+      // Officers and Admins can update attendee records (payment, group, details)
+      // Students cannot modify prices, groups, or other attendees
+      allow update: if isOfficer() && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.id == resource.data.id && request.resource.data.userId == resource.data.userId
+        && request.resource.data.expectedAmount == resource.data.expectedAmount;
+
+      // Only Admins can delete attendee records
+      allow delete: if isAdmin();
+    }
+
+    // GROUPS COLLECTION: groups/{groupId}
+    match /groups/{groupId} {
+      // All users can view groups
+      allow read: if isAuthenticated();
+
+      // Group definitions are a fixed official list and are administered only by admins.
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() && isOfficialGroup(groupId);
+    }
+
+    // EVENT SETTINGS DOCUMENT: settings/event
+    match /settings/{settingId} {
+      // Public event details drive the home page and registration information.
+      // Only administrators may alter them.
+      allow read: if true;
+
+      // Only Admins can modify event settings and price tiers
+      allow write: if isAdmin();
+    }
+
+    // SPIN HISTORY COLLECTION: spinHistory/{spinId}
+    match /spinHistory/{spinId} {
+      // All users can read spin history
+      allow read: if isAuthenticated();
+
+      // Officers and Admins can record spin winners
+      allow create: if isOfficer();
+
+      // Only Admins can clear or modify spin history records
+      allow update, delete: if isAdmin();
+    }
+  }
+}

@@ -26,7 +26,7 @@ import {
 export interface OfficerManagementProps {
   officers: Officer[];
   currentUserRole: UserRole;
-  onAddOfficer: (data: { name: string; email: string; role: 'ADMIN' | 'OFFICER' }) => void;
+  onAddOfficer: (data: { name: string; email: string; password?: string; role: 'ADMIN' | 'OFFICER' }) => Promise<void>;
   onUpdateOfficer: (updated: Officer) => void;
   onDeleteOfficer: (id: string) => void;
   onToggleStatus: (id: string) => void;
@@ -70,9 +70,10 @@ export const OfficerManagement: React.FC<OfficerManagementProps> = ({
     setIsModalOpen(true);
   };
 
-  const handleModalSave = (data: {
+  const handleModalSave = async (data: {
     name: string;
     email: string;
+    password?: string;
     role: 'ADMIN' | 'OFFICER';
     status?: 'ACTIVE' | 'DISABLED';
   }) => {
@@ -85,10 +86,8 @@ export const OfficerManagement: React.FC<OfficerManagementProps> = ({
         status: data.status || editingOfficer.status,
       });
     } else {
-      onAddOfficer(data);
+      await onAddOfficer(data);
     }
-    setIsModalOpen(false);
-    setEditingOfficer(null);
   };
 
   const handleConfirmDelete = () => {

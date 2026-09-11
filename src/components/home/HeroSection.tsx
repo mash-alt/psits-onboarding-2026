@@ -16,6 +16,12 @@ import {
 import { useTheme } from '../../context/ThemeContext';
 
 export interface HeroSectionProps {
+  eventName: string;
+  tagline: string;
+  eventDate: string;
+  callTime: string;
+  venue: string;
+  registrationStatus: string;
   onRegisterClick: () => void;
   onViewAttendeesClick: () => void;
   onExploreGroupsClick: () => void;
@@ -23,6 +29,12 @@ export interface HeroSectionProps {
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = ({
+  eventName,
+  tagline,
+  eventDate,
+  callTime,
+  venue,
+  registrationStatus,
   onRegisterClick,
   onViewAttendeesClick,
   onExploreGroupsClick,
@@ -40,7 +52,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             <div className="bg-gradient-to-r from-[#000080] to-[#1084d0] text-white px-3 py-1 flex items-center justify-between font-bold text-xs select-none mb-1">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 bg-[#FFFF00] border border-black inline-block"></span>
-                <span>PSITS ACQUAINTANCE PARTY 1997 - SYSTEM CONTROL PANEL</span>
+                <span>{eventName} - SYSTEM CONTROL PANEL</span>
               </div>
               <div className="flex items-center gap-0.5">
                 <span className="w-4 h-3.5 bg-[#C0C0C0] text-black text-[9px] font-bold flex items-center justify-center border border-t-white border-l-white border-r-black border-b-black shadow-[inset_0.5px_0.5px_0px_#DFDFDF]">
@@ -63,29 +75,29 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                     COLLEGE OF COMPUTER STUDIES (CCS)
                   </div>
                   <h1 className="text-2xl sm:text-3xl font-bold uppercase tracking-tight text-black">
-                    PSITS ACQUAINTANCE PARTY
+                    {eventName}
                   </h1>
                   <p className="text-xs sm:text-sm text-gray-700 mt-1">
-                    Official induction, attendee onboarding, and 12 Mythical Creature Group event system.
+                    {tagline}
                   </p>
                 </div>
 
                 <div className="bg-[#E8E8E8] border border-t-[#808080] border-l-[#808080] border-r-white border-b-white p-2.5 text-xs text-black min-w-[220px]">
                   <div className="flex justify-between py-0.5 font-bold">
                     <span>DATE:</span>
-                    <span>OCTOBER 24, 2026</span>
+                    <span>{eventDate}</span>
                   </div>
                   <div className="flex justify-between py-0.5">
                     <span>TIME:</span>
-                    <span>05:00 PM PST</span>
+                    <span>{callTime}</span>
                   </div>
                   <div className="flex justify-between py-0.5">
                     <span>VENUE:</span>
-                    <span>MAIN AUDITORIUM</span>
+                    <span>{venue}</span>
                   </div>
                   <div className="flex justify-between py-0.5 text-[#008000] font-bold">
                     <span>STATUS:</span>
-                    <span>ONLINE / READY</span>
+                    <span>{registrationStatus} / READY</span>
                   </div>
                 </div>
               </div>
@@ -140,9 +152,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <StatCard
               label="REGISTRATION STATUS"
-              value="ONLINE"
-              subtext="REGISTRATION ACTIVE"
-              badge="ACTIVE"
+              value={registrationStatus}
+              subtext={`REGISTRATION ${registrationStatus}`}
+              badge={registrationStatus}
               variant="yellow"
               icon={<Activity className="w-4 h-4" />}
               trend="100% UPTIME"
@@ -170,9 +182,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
             <StatCard
               label="EVENT DATE"
-              value="OCT 24"
-              subtext="05:00 PM // AUDITORIUM"
-              badge="2026"
+              value={eventDate}
+              subtext={`${callTime} // ${venue}`}
+              badge={eventDate.split(',').pop()?.trim() || 'EVENT'}
               variant="red"
               icon={<Calendar className="w-4 h-4" />}
               trend="ACTIVE"
@@ -200,7 +212,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               SYSTEM ONLINE
             </Badge>
             <Badge variant="yellow" size="md" tilt="right">
-              REGISTRATION OPEN
+              REGISTRATION {registrationStatus}
             </Badge>
           </div>
 
@@ -279,8 +291,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           {/* Subtitle / Event Description */}
           <div className="max-w-3xl mb-8 space-y-2">
             <p className="text-base sm:text-xl font-black text-black uppercase tracking-tight leading-snug">
-              The definitive induction, onboarding, and acquaintance celebration for all College of Computer
-              Studies (CCS) students. 12 mythical creature groups clash for departmental supremacy.
+              {tagline}
             </p>
             <p className="text-xs sm:text-sm font-bold text-gray-700 uppercase tracking-wide font-mono">
               [OFFICER_PROTOCOL: GROUP_MANAGEMENT] // 12 BALANCED MYTHICAL CREATURE GROUPS
@@ -320,26 +331,15 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             </Button>
           </div>
 
-          {/* Bottom decorative bar */}
-          <div className="mt-8 pt-4 border-t-4 border-black flex flex-wrap items-center justify-between text-xs font-mono font-bold text-black uppercase">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-[#FF6B6B]"></span>
-              <span>DEV: PSITS TECH COMMISSION</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <span>CIPHER: 0xMYTHIC12</span>
-              <span>PORT: 3000</span>
-            </div>
-          </div>
         </div>
 
         {/* 4 Primary Event Metric StatCards Below Hero */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-10">
           <StatCard
             label="REGISTRATION STATUS"
-            value="ONLINE"
-            subtext="REGISTRATION ACTIVE"
-            badge="ACTIVE"
+            value={registrationStatus}
+            subtext={`REGISTRATION ${registrationStatus}`}
+            badge={registrationStatus}
             variant="yellow"
             icon={<Activity className="w-6 h-6 stroke-[2.5]" />}
             trend="100% UPTIME"
@@ -367,9 +367,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
           <StatCard
             label="EVENT DATE"
-            value="OCT 24"
-            subtext="05:00 PM // AUDITORIUM"
-            badge="2026"
+            value={eventDate}
+            subtext={`${callTime} // ${venue}`}
+            badge={eventDate.split(',').pop()?.trim() || 'EVENT'}
             variant="red"
             icon={<Calendar className="w-6 h-6 stroke-[2.5]" />}
             trend="COUNTDOWN ON"

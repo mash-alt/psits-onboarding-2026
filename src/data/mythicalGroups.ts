@@ -130,8 +130,8 @@ export const OFFICIAL_MYTHICAL_GROUPS: MythicalCreatureGroup[] = [
     traits: ['Micro Architectures', 'Subterranean Wisdom', 'Vault Security']
   },
   {
-    id: 'magkukulam',
-    name: 'Magkukulam',
+    id: 'mangkukulam',
+    name: 'Mangkukulam',
     tagline: 'ESOTERIC CODE WEAVERS & SPELLBINDERS',
     element: 'Wax Talismans & Shadow Syntax',
     itSpecialty: 'Compiler Sorcery & Cryptographic Ciphers',

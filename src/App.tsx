@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavItem, MythicalCreatureGroup, AdminSubSection } from './types';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navigation } from './components/layout/Navigation';
 import { Footer } from './components/layout/Footer';
 import { Marquee } from './components/layout/Marquee';
@@ -13,6 +14,7 @@ import { LoginView } from './components/views/LoginView';
 import { RegisterView } from './components/views/RegisterView';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { GroupDetailModal } from './components/modals/GroupDetailModal';
+import { DEFAULT_EVENT_SETTINGS, EventSettingsDoc, getEventSettings, subscribeToEventSettings } from './services/firebase';
 
 function AppContent() {
   const [currentNav, setCurrentNav] = useState<NavItem>('HOME');
@@ -20,6 +22,20 @@ function AppContent() {
   const [selectedGroup, setSelectedGroup] = useState<MythicalCreatureGroup | null>(null);
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
   const { isRetro } = useTheme();
+  const { user, loading: authLoading } = useAuth();
+  const [eventSettings, setEventSettings] = useState<EventSettingsDoc>(DEFAULT_EVENT_SETTINGS);
+
+  useEffect(() => {
+    getEventSettings().then(setEventSettings);
+    return subscribeToEventSettings(setEventSettings);
+  }, []);
+
+  const eventDateLabel = new Intl.DateTimeFormat('en-US', {
+    month: 'long', day: 'numeric', year: 'numeric',
+  }).format(new Date(`${eventSettings.eventDate}T00:00:00`));
+  const eventTimeLabel = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric', minute: '2-digit',
+  }).format(new Date(`1970-01-01T${eventSettings.callTime || '17:00'}:00`));
 
   // Sync initial route from URL path or hash (/login, /register, /admin, etc.)
   useEffect(() => {
@@ -120,7 +136,7 @@ function AppContent() {
 
       {/* Top Event Marquee */}
       <Marquee
-        text="PSITS // CCS DEPARTMENT // COLLEGE OF COMPUTER STUDIES // ACQUAINTANCE PARTY // 12 MYTHICAL CREATURE GROUPS // SYSTEM ONLINE // CONNECT // COMPETE // CHAOS //"
+        text={`${eventSettings.eventName} // ${eventSettings.tagline} // ${eventDateLabel} // 12 MYTHICAL CREATURE GROUPS // SYSTEM ONLINE //`}
         variant="yellow"
       />
 
@@ -130,6 +146,12 @@ function AppContent() {
         {currentNav === 'HOME' && (
           <>
             <HeroSection
+              eventName={eventSettings.eventName}
+              tagline={eventSettings.tagline}
+              eventDate={eventDateLabel}
+              callTime={eventTimeLabel}
+              venue={eventSettings.venue || 'Main Auditorium'}
+              registrationStatus={eventSettings.registrationStatus}
               onRegisterClick={() => handleNavigate('REGISTER')}
               onViewAttendeesClick={() => handleNavigate('ATTENDEES')}
               onExploreGroupsClick={() => {
@@ -197,7 +219,18 @@ function AppContent() {
         )}
 
         {/* 8. PSITS CONTROL CENTER (ADMINISTRATION & GOVERNANCE) */}
-        {currentNav === 'ADMIN' && (
+        {currentNav === 'ADMIN' && authLoading && (
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 font-mono font-black text-sm uppercase">
+            Restoring secure session...
+          </div>
+        )}
+        {currentNav === 'ADMIN' && !authLoading && !user && (
+          <LoginView
+            onLoginSuccess={() => handleNavigate('ADMIN')}
+            onNavigateToHome={() => handleNavigate('HOME')}
+          />
+        )}
+        {currentNav === 'ADMIN' && !authLoading && user && (
           <AdminDashboard
             initialSubSection={adminSubSection}
             onNavigateToRegister={() => handleNavigate('REGISTER')}
@@ -211,7 +244,7 @@ function AppContent() {
 
       {/* Bottom Marquee Accent */}
       <Marquee
-        text="PSITS ACQUAINTANCE PARTY // OCTOBER 24 2026 // 5:00 PM // CCS DEPARTMENT // COLLEGE OF COMPUTER STUDIES //"
+        text={`${eventSettings.eventName} // ${eventDateLabel} // ${eventTimeLabel} // ${eventSettings.venue || 'MAIN AUDITORIUM'} // ${eventSettings.department || 'CCS DEPARTMENT'} //`}
         variant="red"
       />
 
@@ -219,6 +252,11 @@ function AppContent() {
       <Footer
         onNavigate={handleNavigate}
         onOpenRegister={() => handleNavigate('REGISTER')}
+        eventName={eventSettings.eventName}
+        eventDate={eventDateLabel}
+        callTime={eventTimeLabel}
+        venue={eventSettings.venue || 'Main Auditorium'}
+        registrationStatus={eventSettings.registrationStatus}
       />
 
       {/* Group Detail Modal */}
@@ -235,7 +273,9 @@ function AppContent() {
 export default function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </ThemeProvider>
   );
 }

@@ -5,9 +5,14 @@ import { useTheme } from '../../context/ThemeContext';
 export interface FooterProps {
   onNavigate: (item: NavItem) => void;
   onOpenRegister: () => void;
+  eventName: string;
+  eventDate: string;
+  callTime: string;
+  venue: string;
+  registrationStatus: string;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenRegister }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenRegister, eventName, eventDate, callTime, venue, registrationStatus }) => {
   const { isRetro } = useTheme();
 
   if (isRetro) {
@@ -20,7 +25,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenRegister }) =>
               SYS STATUS: READY
             </span>
             <span className="px-2 py-0.5 bg-[#E8E8E8] border border-t-[#808080] border-l-[#808080] border-r-white border-b-white text-[11px]">
-              DATE: OCT 24, 2026
+              DATE: {eventDate}
             </span>
             <span className="px-2 py-0.5 bg-[#E8E8E8] border border-t-[#808080] border-l-[#808080] border-r-white border-b-white text-[11px]">
               GROUPS: 12 MYTHICAL
@@ -82,7 +87,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenRegister }) =>
                     OFFICIAL CCS ORG
                   </span>
                   <h3 className="text-xl font-black uppercase tracking-tight text-[#FFFDF5] mt-0.5">
-                    PSITS EVENT
+                    {eventName}
                   </h3>
                 </div>
               </div>
@@ -114,7 +119,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenRegister }) =>
               <span className="hover:text-[#C4B5FD] transition-colors cursor-default">⚡ Shokoy</span>
               <span className="hover:text-[#FFD93D] transition-colors cursor-default">⚡ Manananggal</span>
               <span className="hover:text-[#FF6B6B] transition-colors cursor-default">⚡ Duwende</span>
-              <span className="hover:text-[#C4B5FD] transition-colors cursor-default">⚡ Magkukulam</span>
+              <span className="hover:text-[#C4B5FD] transition-colors cursor-default">⚡ Mangkukulam</span>
               <span className="hover:text-[#FFD93D] transition-colors cursor-default">⚡ Sirena</span>
               <span className="hover:text-[#FF6B6B] transition-colors cursor-default">⚡ Diwata</span>
               <span className="hover:text-[#C4B5FD] transition-colors cursor-default">⚡ Otlum</span>
@@ -189,18 +194,18 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenRegister }) =>
             <div className="bg-[#141414] border-3 border-white p-3 space-y-2">
               <div className="flex items-center justify-between text-xs font-bold">
                 <span className="text-gray-400">DATE:</span>
-                <span className="text-[#FFD93D] font-mono font-black">OCT 24, 2026</span>
+                <span className="text-[#FFD93D] font-mono font-black">{eventDate}</span>
               </div>
               <div className="flex items-center justify-between text-xs font-bold">
                 <span className="text-gray-400">CALL TIME:</span>
-                <span className="text-[#FFFDF5] font-mono font-black">05:00 PM PST</span>
+                <span className="text-[#FFFDF5] font-mono font-black">{callTime}</span>
               </div>
               <div className="flex items-center justify-between text-xs font-bold">
                 <span className="text-gray-400">VENUE:</span>
-                <span className="text-[#C4B5FD] font-mono font-black">MAIN AUDITORIUM</span>
+                <span className="text-[#C4B5FD] font-mono font-black">{venue}</span>
               </div>
               <div className="pt-2 border-t border-white/20 flex items-center justify-between">
-                <span className="text-[10px] font-mono text-[#FF6B6B]">SYSTEM: ONLINE</span>
+                <span className="text-[10px] font-mono text-[#FF6B6B]">SYSTEM: {registrationStatus}</span>
                 <span className="w-2 h-2 bg-[#FFD93D] inline-block"></span>
               </div>
             </div>
@@ -230,7 +235,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenRegister }) =>
         <div className="border-t-4 border-white/20 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-bold text-gray-400 uppercase">
           <p>© 2026 PSITS — CCS DEPARTMENT, COLLEGE OF COMPUTER STUDIES. ALL RIGHTS RESERVED.</p>
           <div className="flex items-center gap-4 text-xs font-mono">
-            <span className="text-[#FFD93D]">PHASE 1: FRONTEND FOUNDATION</span>
             <span>//</span>
             <span>BUILD: 1.0.0-PROD</span>
           </div>

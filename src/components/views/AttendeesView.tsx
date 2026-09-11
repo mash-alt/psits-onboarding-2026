@@ -14,7 +14,7 @@ import { OFFICIAL_MYTHICAL_GROUPS } from '../../data/mythicalGroups';
 import { AttendeeRegistration } from '../../types';
 import { useAttendeeDatabase } from '../../hooks/useAttendeeDatabase';
 import { generateAttendeeCSVTemplate, exportAttendeesToCSV } from '../../utils/csvUtils';
-import { getActiveRole, setActiveRole } from '../../data/eventStore';
+import { useAuth } from '../../context/AuthContext';
 import {
   Search,
   Filter,
@@ -40,6 +40,7 @@ import {
   FileSpreadsheet,
   FileText,
   ShieldCheck,
+  Trash2,
   X,
 } from 'lucide-react';
 
@@ -79,7 +80,7 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
     activeFiltersCount,
     handleUpdateAttendee,
     handleUpdateAttendeeGroup,
-    handleResetStore,
+    handleDeleteAttendee,
     handleImportAttendees,
   } = useAttendeeDatabase(selectedGroupFilter);
 
@@ -94,23 +95,17 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [currentRole, setCurrentRole] = useState(getActiveRole());
-
-  // Role toggle simulation for testing
-  const handleToggleRole = (role: 'ADMIN' | 'OFFICER' | 'STUDENT') => {
-    setActiveRole(role);
-    setCurrentRole(role);
-  };
+  const { role: currentRole, isAdmin, isOfficer } = useAuth();
 
   const handleExportSuccess = (count: number, filename: string) => {
     setToastMessage(`CSV EXPORT SUCCESSFUL: ${count} attendee records saved to ${filename}`);
   };
 
-  const handleImportSuccessCallback = (
+  const handleImportSuccessCallback = async (
     importedList: AttendeeRegistration[],
     overwrite: boolean
   ) => {
-    const stats = handleImportAttendees(importedList, overwrite);
+    const stats = await handleImportAttendees(importedList, overwrite);
     setToastMessage(
       `CSV IMPORT COMPLETE: +${stats.added} new attendees added, ${stats.updated} records updated (${stats.total} total in database).`
     );
@@ -161,6 +156,23 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
     if (onClearGroupFilter) onClearGroupFilter();
   };
 
+  const handleDelete = async (attendee: AttendeeRegistration) => {
+    const confirmed = window.confirm(
+      `Delete ${attendee.fullName} (${attendee.studentId})? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await handleDeleteAttendee(attendee);
+      setSelectedAttendeeForDetail(null);
+      setSelectedAttendeeForEdit(null);
+      setToastMessage(`ATTENDEE DELETED: ${attendee.studentId}`);
+    } catch (err) {
+      console.error('Failed to delete attendee:', err);
+      setToastMessage('UNABLE TO DELETE ATTENDEE. PLEASE TRY AGAIN.');
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fadeIn">
       {/* 1. PAGE HEADER */}
@@ -193,16 +205,6 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
             </Button>
 
             <Button
-              variant="outline"
-              size="md"
-              onClick={handleResetStore}
-              title="Reset mock dataset to initial 550+ students"
-              leftIcon={<RotateCcw className="w-4 h-4" />}
-            >
-              RESET 550+
-            </Button>
-
-            <Button
               variant="primary"
               size="md"
               onClick={onOpenRegister}
@@ -231,8 +233,7 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
         </div>
       )}
 
-      {/* ADMIN & OFFICER CSV UTILITY TOOLBAR */}
-      <div className="bg-[#FFFDF5] border-4 border-black p-4 shadow-[5px_5px_0px_#000000] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      {isOfficer && <div className="bg-[#FFFDF5] border-4 border-black p-4 shadow-[5px_5px_0px_#000000] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-black text-[#FFD93D] border-2 border-black flex items-center justify-center shrink-0">
             <FileSpreadsheet className="w-5 h-5" />
@@ -296,7 +297,7 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
             [GET TEMPLATE]
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* 2. STATISTICS CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
@@ -853,6 +854,16 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
                               <Edit3 className="w-3 h-3" />
                               <span>EDIT</span>
                             </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleDelete(att)}
+                                className="px-2 py-1 bg-[#FF6B6B] hover:bg-black hover:text-[#FF6B6B] text-black font-mono font-black text-[10px] border-2 border-black shadow-[2px_2px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 transition-all cursor-pointer flex items-center gap-1"
+                                title="Delete attendee record"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>DELETE</span>
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -961,6 +972,17 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
                   >
                     EDIT
                   </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="accent"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleDelete(att)}
+                      leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                    >
+                      DELETE
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -1085,10 +1107,7 @@ export const AttendeesView: React.FC<AttendeesViewProps> = ({
         attendee={selectedAttendeeForEdit}
         isOpen={!!selectedAttendeeForEdit}
         onClose={() => setSelectedAttendeeForEdit(null)}
-        onSave={(updated) => {
-          handleUpdateAttendee(updated);
-          setSelectedAttendeeForEdit(null);
-        }}
+        onSave={handleUpdateAttendee}
       />
 
       {/* CSV Export Modal */}

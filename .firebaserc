@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "decyl-expense"
+  },
+  "targets": {
+    "decyl-expense": {
+      "hosting": {
+        "acq-psits": [
+          "acq-psits"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

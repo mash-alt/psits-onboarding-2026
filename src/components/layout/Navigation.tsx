@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { NavItem } from '../../types';
 import { Menu, X, Flame, Shield, User, ArrowRight, LogOut, Monitor } from 'lucide-react';
-import { getCurrentUser, setCurrentUser } from '../../data/eventStore';
+import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { StyleModeToggle } from './StyleModeToggle';
 
@@ -17,13 +17,11 @@ export const Navigation: React.FC<NavigationProps> = ({
   onNavigate,
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [user, setUser] = useState(getCurrentUser());
+  const { user, userProfile, role, isOfficer, isAdmin, signOut } = useAuth();
   const { isRetro } = useTheme();
 
-  useEffect(() => {
-    // refresh user
-    setUser(getCurrentUser());
-  }, [currentNav]);
+  const displayName = userProfile?.name || user?.displayName || user?.email?.split('@')[0] || '';
+  const displayRole = (userProfile?.role || role || 'OFFICER').toUpperCase();
 
   const navItems: { label: NavItem; isAction?: boolean }[] = [
     { label: 'HOME' },
@@ -40,9 +38,12 @@ export const Navigation: React.FC<NavigationProps> = ({
     onNavigate(item);
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setUser(null);
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
     onNavigate('HOME');
   };
 
@@ -110,7 +111,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                   return (
                     <div key="retro-user" className="flex items-center gap-1 ml-2">
                       <span className="px-2 py-1 bg-[#FFFFFF] border border-t-[#808080] border-l-[#808080] border-r-white border-b-white text-[11px] font-bold text-black">
-                        OFFICER: {user.username}
+                        {displayRole}: {displayName}
                       </span>
                       <button
                         onClick={handleLogout}
@@ -280,10 +281,10 @@ export const Navigation: React.FC<NavigationProps> = ({
                       <button
                         onClick={() => handleNavClick('ADMIN')}
                         className="px-3 py-2 bg-[#C4B5FD] text-black font-black uppercase text-xs tracking-wider border-3 border-black shadow-[3px_3px_0px_#000000] flex items-center gap-1.5 cursor-pointer hover:bg-white"
-                        title={user.username}
+                        title={displayName}
                       >
                         <User className="w-3.5 h-3.5" />
-                        <span className="max-w-[120px] truncate">{user.username}</span>
+                        <span className="max-w-[120px] truncate">{displayName} ({displayRole})</span>
                       </button>
                       <button
                         onClick={handleLogout}

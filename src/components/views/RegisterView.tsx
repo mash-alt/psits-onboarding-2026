@@ -1,16 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageHeader } from '../ui/PageHeader';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { Card } from '../ui/Card';
-import { RegistrationType, AttendeeRegistration } from '../../types';
+import { RegistrationType } from '../../types';
 import {
-  getEventConfig,
-  saveAttendeeRegistration,
+  getEventSettings,
+  createAttendee,
   isStudentIdRegistered,
-} from '../../data/eventStore';
+  subscribeToEventSettings,
+  DEFAULT_EVENT_SETTINGS,
+  EventSettingsDoc,
+  AttendeeDoc,
+} from '../../services/firebase';
+import { useAuth } from '../../context/AuthContext';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -37,7 +42,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   onNavigateToAttendees,
   onNavigateToHome,
 }) => {
-  const eventConfig = getEventConfig();
+  const { user } = useAuth();
+  const [eventSettings, setEventSettings] = useState<EventSettingsDoc>(DEFAULT_EVENT_SETTINGS);
 
   // Form Fields
   const [studentId, setStudentId] = useState('');
@@ -51,30 +57,32 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   // Validation State
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   // Result state after registration
-  const [completedRegistration, setCompletedRegistration] = useState<AttendeeRegistration | null>(null);
+  const [completedRegistration, setCompletedRegistration] = useState<AttendeeDoc | null>(null);
 
-  // Calculate amount dynamically from event configuration
+  // Load real event settings from Firestore
+  useEffect(() => {
+    getEventSettings().then(setEventSettings).catch(() => {});
+    const unsub = subscribeToEventSettings(setEventSettings);
+    return () => unsub();
+  }, []);
+
+  // Calculate amount dynamically from Firestore event settings (non-arbitrary)
   const calculatedAmount =
-    registrationType === 'EARLY BIRD' ? eventConfig.earlyBirdFee : eventConfig.regularFee;
+    registrationType === 'EARLY BIRD' ? eventSettings.earlyBirdPrice : eventSettings.regularPrice;
 
-  // Student ID Strict Validation
-  const validateStudentId = (id: string): string | null => {
+  // Student ID Strict Validation (numbers only, exactly 8 digits)
+  const validateStudentIdBasic = (id: string): string | null => {
     if (!id.trim()) {
       return 'STUDENT ID IS REQUIRED';
     }
-    // Check for letters or non-digits
     if (!/^\d+$/.test(id)) {
       return 'STUDENT ID MUST CONTAIN NUMBERS ONLY. LETTERS AND SYMBOLS REJECTED.';
     }
-    // Check exact length
     if (id.length !== 8) {
       return `STUDENT ID MUST BE EXACTLY 8 DIGITS (CURRENTLY ${id.length} DIGITS).`;
-    }
-    // Uniqueness check
-    if (isStudentIdRegistered(id)) {
-      return `STUDENT ID "${id}" IS ALREADY REGISTERED IN THE SYSTEM. MUST BE UNIQUE.`;
     }
     return null;
   };
@@ -82,9 +90,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const handleStudentIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value;
     setStudentId(rawVal);
+    setServerError(null);
 
     if (errors.studentId) {
-      const err = validateStudentId(rawVal);
+      const err = validateStudentIdBasic(rawVal);
       setErrors((prev) => {
         const next = { ...prev };
         if (!err) delete next.studentId;
@@ -97,7 +106,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    const idError = validateStudentId(studentId);
+    const idError = validateStudentIdBasic(studentId);
     if (idError) newErrors.studentId = idError;
 
     if (!fullName.trim()) {
@@ -130,8 +139,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setServerError(null);
+
     if (!validateForm()) {
       const el = document.getElementById('registration-error-summary');
       if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -140,35 +151,42 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const saved = saveAttendeeRegistration({
+    try {
+      // Check duplicate ID in Firestore
+      const isRegistered = await isStudentIdRegistered(studentId.trim());
+      if (isRegistered) {
+        setServerError(`STUDENT ID "${studentId.trim()}" IS ALREADY REGISTERED IN THE DATABASE.`);
+        setIsSubmitting(false);
+        const el = document.getElementById('registration-error-summary');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
+
+      // Create attendee in Firestore with server-derived expectedAmount
+      const saved = await createAttendee({
         studentId: studentId.trim(),
-        fullName: fullName.trim(),
+        name: fullName.trim(),
         section: section.trim().toUpperCase(),
-        yearLevel,
+        year: yearLevel,
         course,
         registrationType,
-        amount: calculatedAmount,
+        actualAmount: calculatedAmount,
         datePaid,
-        groupAssignment: 'UNASSIGNED',
+        paymentStatus: calculatedAmount > 0 ? 'PAID' : 'UNPAID',
+        userId: user?.uid || null,
+        registeredBy: user?.email || 'portal',
       });
 
       setCompletedRegistration(saved);
       setIsSubmitting(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 450);
-  };
-
-  const handleAutofillDemo = () => {
-    const mockId = String(Math.floor(10000000 + Math.random() * 90000000));
-    setStudentId(mockId);
-    setFullName('Juan Carlos De La Cruz');
-    setCourse('BS Information Technology');
-    setYearLevel('1st Year');
-    setSection('BSIT-1A');
-    setRegistrationType('EARLY BIRD');
-    setDatePaid(new Date().toISOString().split('T')[0]);
-    setErrors({});
+    } catch (err: unknown) {
+      const message = (err as { message?: string }).message || 'Failed to record registration.';
+      setServerError(message.toUpperCase());
+      setIsSubmitting(false);
+      const el = document.getElementById('registration-error-summary');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const handleResetForm = () => {
@@ -250,7 +268,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   2. ATTENDEE FULL NAME
                 </span>
                 <span className="text-xl font-black uppercase text-black">
-                  {completedRegistration.fullName}
+                  {completedRegistration.name}
                 </span>
               </div>
 
@@ -279,7 +297,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   5. ACADEMIC YEAR LEVEL
                 </span>
                 <span className="text-lg font-black uppercase text-black">
-                  {completedRegistration.yearLevel}
+                  {completedRegistration.year}
                 </span>
               </div>
 
@@ -294,10 +312,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
               <div className="border-b-2 border-black/20 pb-2">
                 <span className="font-mono text-[11px] font-bold uppercase text-gray-500 block">
-                  7. AMOUNT PAID
+                  7. AMOUNT PAID (PERMANENT HISTORICAL PRICE)
                 </span>
                 <span className="text-2xl font-black font-mono text-[#FF6B6B]">
-                  ₱{completedRegistration.amount.toLocaleString()} PHP
+                  ₱{(completedRegistration.actualAmount !== undefined ? completedRegistration.actualAmount : completedRegistration.expectedAmount).toLocaleString()} PHP
                 </span>
               </div>
 
@@ -367,16 +385,6 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         titleAccent="REGISTRATION"
         description="Official attendee registration portal for all College of Computer Studies students. Enter verified 8-digit Student ID and payment credentials to record attendee enrollment."
         badgeText="OFFICER ENTRY // ACTIVE"
-        actions={
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={handleAutofillDemo}
-            leftIcon={<Sparkles className="w-4 h-4 text-[#FF6B6B]" />}
-          >
-            AUTOFILL SAMPLE DATA
-          </Button>
-        }
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start mt-6">
@@ -421,7 +429,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     </span>
                   </div>
                   <span className="text-2xl font-black font-mono text-[#FF6B6B]">
-                    ₱{eventConfig.earlyBirdFee}
+                    ₱{eventSettings.earlyBirdPrice}
                   </span>
                 </div>
               </div>
@@ -444,7 +452,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     </span>
                   </div>
                   <span className="text-2xl font-black font-mono text-black">
-                    ₱{eventConfig.regularFee}
+                    ₱{eventSettings.regularPrice}
                   </span>
                 </div>
               </div>
@@ -513,7 +521,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             {/* Form */}
             <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6">
               {/* Error Summary Alert */}
-              {Object.keys(errors).length > 0 && (
+              {(Object.keys(errors).length > 0 || serverError) && (
                 <div
                   id="registration-error-summary"
                   className="bg-[#FF6B6B] border-4 border-black p-4 shadow-[5px_5px_0px_#000000] text-black font-black uppercase text-xs sm:text-sm space-y-2"
@@ -522,11 +530,14 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     <AlertTriangle className="w-5 h-5 stroke-[3]" />
                     <span>REGISTRATION REJECTED // PLEASE FIX THE FOLLOWING:</span>
                   </div>
-                  <ul className="list-disc list-inside font-mono text-xs space-y-1 pl-2">
-                    {Object.entries(errors).map(([key, msg]) => (
-                      <li key={key}>{msg}</li>
-                    ))}
-                  </ul>
+                  {serverError && <p className="font-mono text-xs font-black">{serverError}</p>}
+                  {Object.keys(errors).length > 0 && (
+                    <ul className="list-disc list-inside font-mono text-xs space-y-1 pl-2">
+                      {Object.entries(errors).map(([key, msg]) => (
+                        <li key={key}>{msg}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
 
@@ -534,11 +545,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               <div>
                 <Input
                   label="1. STUDENT ID (EXACTLY 8 DIGITS - NUMBERS ONLY)"
-                  placeholder="e.g. 20240182"
+                  placeholder="e.g. 01234567"
                   value={studentId}
                   onChange={handleStudentIdChange}
                   error={errors.studentId}
-                  helperText="Must be exactly 8 digits. System validates strictly for numbers only and rejects letters."
+                  helperText="Must be exactly 8 digits. Leading zeros are preserved as a string."
                   leftIcon={<Hash className="w-4 h-4 text-black stroke-[2.5]" />}
                   required
                 />
@@ -649,8 +660,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   helperText="Calculates ticket fee automatically"
                   leftIcon={<CreditCard className="w-4 h-4 text-black stroke-[2.5]" />}
                   options={[
-                    { value: 'EARLY BIRD', label: `Early Bird (₱${eventConfig.earlyBirdFee} PHP)` },
-                    { value: 'REGULAR', label: `Regular (₱${eventConfig.regularFee} PHP)` },
+                    { value: 'EARLY BIRD', label: `Early Bird (₱${eventSettings.earlyBirdPrice} PHP)` },
+                    { value: 'REGULAR', label: `Regular (₱${eventSettings.regularPrice} PHP)` },
                   ]}
                   required
                 />

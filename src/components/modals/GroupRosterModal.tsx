@@ -3,7 +3,6 @@ import { MythicalCreatureGroup, AttendeeRegistration } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { getStoredAttendees } from '../../data/eventStore';
 import {
   Users,
   Search,
@@ -23,6 +22,7 @@ export interface GroupRosterModalProps {
   isOpen: boolean;
   onClose: () => void;
   totalEventAttendees: number;
+  attendees?: any[];
 }
 
 export const GroupRosterModal: React.FC<GroupRosterModalProps> = ({
@@ -30,26 +30,32 @@ export const GroupRosterModal: React.FC<GroupRosterModalProps> = ({
   isOpen,
   onClose,
   totalEventAttendees,
+  attendees: propAttendees,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [yearFilter, setYearFilter] = useState<string>('ALL');
   const [courseFilter, setCourseFilter] = useState<string>('ALL');
 
-  // Pull all live attendees for this group from the persistent store
+  // The parent supplies Firestore-backed attendees. An empty collection stays empty.
   const allAttendees = useMemo(() => {
     if (!isOpen) return [];
-    return getStoredAttendees();
-  }, [isOpen]);
+    return (propAttendees || []).map((att) => ({
+        id: att.id || att.studentId,
+        studentId: att.studentId,
+        fullName: att.fullName || att.name || 'Unnamed Student',
+        course: att.course || 'BSIT',
+        section: att.section || '',
+        yearLevel: att.yearLevel || att.year || '1st Year',
+        groupAssignment: att.groupAssignment || att.groupId || '',
+        status: att.status || (att.paymentStatus === 'PAID' ? 'CONFIRMED' : 'PENDING'),
+      }));
+  }, [isOpen, propAttendees]);
 
   const groupMembers = useMemo(() => {
     if (!group) return [];
     const groupNameLower = group.name.toLowerCase();
     return allAttendees.filter((att) => {
       const assignedLower = (att.groupAssignment || '').toLowerCase();
-      // Handle alias for Magkukulam / Mangkukulam
-      if (groupNameLower === 'magkukulam' || groupNameLower === 'mangkukulam') {
-        return assignedLower === 'magkukulam' || assignedLower === 'mangkukulam';
-      }
       return assignedLower === groupNameLower;
     });
   }, [allAttendees, group]);

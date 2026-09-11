@@ -7,12 +7,13 @@ import {
   AttendeePaginationState,
 } from '../types';
 import {
-  getStoredAttendees,
-  updateAttendee,
-  updateAttendeeGroup,
-  resetAttendeeStore,
-  importAttendeesBatch,
-} from '../data/eventStore';
+  getAttendees as getFirestoreAttendees,
+  subscribeToAttendees,
+  updateAttendee as updateFirestoreAttendee,
+  deleteAttendee as deleteFirestoreAttendee,
+  importAttendeesBatch as importFirestoreAttendees,
+  AttendeeDoc,
+} from '../services/firebase';
 
 export const INITIAL_SEARCH_STATE: AttendeeSearchState = {
   query: '',
@@ -33,6 +34,31 @@ export const INITIAL_PAGINATION_STATE: AttendeePaginationState = {
   currentPage: 1,
   pageSize: 25,
 };
+
+function mapAttendeeDocToRegistration(doc: AttendeeDoc): AttendeeRegistration {
+  // Normalize group ID to display name if lowercase
+  const rawGroup = doc.groupId || 'Unassigned';
+  const capitalizedGroup =
+    rawGroup.charAt(0).toUpperCase() + rawGroup.slice(1).toLowerCase();
+
+  return {
+    id: doc.id,
+    studentId: doc.studentId,
+    fullName: doc.name,
+    section: doc.section,
+    yearLevel: (doc.year as '1st Year' | '2nd Year' | '3rd Year' | '4th Year') || '1st Year',
+    course: doc.course,
+    registrationType: doc.registrationType,
+    amount: doc.actualAmount !== undefined ? doc.actualAmount : doc.expectedAmount,
+    expectedAmount: doc.expectedAmount,
+    actualAmount: doc.actualAmount,
+    paymentStatus: doc.paymentStatus,
+    datePaid: doc.datePaid,
+    groupAssignment: capitalizedGroup,
+    registeredAt: doc.registeredAt,
+    status: 'CONFIRMED',
+  };
+}
 
 export function useAttendeeDatabase(initialGroupFilter?: string | null) {
   // 1. Core Data State
@@ -59,16 +85,32 @@ export function useAttendeeDatabase(initialGroupFilter?: string | null) {
   // 5. Pagination State
   const [pagination, setPagination] = useState<AttendeePaginationState>(INITIAL_PAGINATION_STATE);
 
-  // Load attendees from storage
-  const loadAttendees = useCallback(() => {
+  // Firestore is the source of truth; the production interface never falls back
+  // to generated browser data.
+  const loadAttendees = useCallback(async () => {
     setIsLoading(true);
-    const data = getStoredAttendees();
-    setAttendees(data);
-    setIsLoading(false);
+    try {
+      const docs = await getFirestoreAttendees();
+      setAttendees(docs.map(mapAttendeeDocToRegistration));
+    } catch {
+      setAttendees([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     loadAttendees();
+
+    // Subscribe to real-time Firestore updates
+    const unsubscribe = subscribeToAttendees((docs) => {
+      if (docs && docs.length > 0) {
+        setAttendees(docs.map(mapAttendeeDocToRegistration));
+        setIsLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, [loadAttendees]);
 
   // Sync external group filter
@@ -105,7 +147,7 @@ export function useAttendeeDatabase(initialGroupFilter?: string | null) {
       unpaid,
       earlyBird,
       regular,
-      activeGroupsCount: 12, // 12 official Mythical Creature Groups
+      activeGroupsCount: 12, // Exactly 12 official Mythical Creature Groups
     };
   }, [attendees]);
 
@@ -144,22 +186,18 @@ export function useAttendeeDatabase(initialGroupFilter?: string | null) {
       }
 
       // 2. Applied Filter Matching
-      // Course
       if (appliedFilters.course !== 'ALL' && att.course !== appliedFilters.course) {
         return false;
       }
 
-      // Section
       if (appliedFilters.section !== 'ALL' && att.section !== appliedFilters.section) {
         return false;
       }
 
-      // Year Level
       if (appliedFilters.year !== 'ALL' && att.yearLevel !== appliedFilters.year) {
         return false;
       }
 
-      // Registration Type
       if (
         appliedFilters.registrationType !== 'ALL' &&
         att.registrationType !== appliedFilters.registrationType
@@ -169,16 +207,15 @@ export function useAttendeeDatabase(initialGroupFilter?: string | null) {
 
       // Mythical Creature Group
       if (appliedFilters.group !== 'ALL') {
-        if (appliedFilters.group === 'UNASSIGNED') {
-          if (att.groupAssignment && att.groupAssignment.trim() !== '') return false;
-        } else if (
-          att.groupAssignment?.toLowerCase() !== appliedFilters.group.toLowerCase()
-        ) {
+        const targetGroup = appliedFilters.group.toLowerCase();
+        const assignedGroup = (att.groupAssignment || '').toLowerCase();
+        if (targetGroup === 'unassigned') {
+          if (assignedGroup !== '' && assignedGroup !== 'unassigned') return false;
+        } else if (assignedGroup !== targetGroup) {
           return false;
         }
       }
 
-      // Payment Status
       if (
         appliedFilters.paymentStatus !== 'ALL' &&
         att.paymentStatus !== appliedFilters.paymentStatus
@@ -186,7 +223,6 @@ export function useAttendeeDatabase(initialGroupFilter?: string | null) {
         return false;
       }
 
-      // Date Paid
       if (appliedFilters.datePaid) {
         if (!att.datePaid || !att.datePaid.includes(appliedFilters.datePaid)) {
           return false;
@@ -260,37 +296,65 @@ export function useAttendeeDatabase(initialGroupFilter?: string | null) {
     []
   );
 
-  // Handlers for attendee updates
-  const handleUpdateAttendee = useCallback((updated: AttendeeRegistration) => {
-    updateAttendee(updated);
+  // Handlers for attendee updates syncing to Firestore
+  const handleUpdateAttendee = useCallback(async (updated: AttendeeRegistration) => {
+    await updateFirestoreAttendee(updated.id, {
+      studentId: updated.studentId,
+      name: updated.fullName,
+      section: updated.section,
+      year: updated.yearLevel,
+      course: updated.course,
+      registrationType: updated.registrationType,
+      actualAmount: updated.actualAmount !== undefined ? updated.actualAmount : updated.amount,
+      paymentStatus: updated.paymentStatus,
+      datePaid: updated.datePaid,
+      groupId: (updated.groupAssignment || 'kapre').toLowerCase(),
+    });
     setAttendees((prev) =>
-      prev.map((a) => (a.id === updated.id ? { ...updated } : a))
+      prev.map((a) => (a.id === updated.id ? { ...updated, id: updated.studentId } : a))
     );
   }, []);
 
   const handleUpdateAttendeeGroup = useCallback(
-    (attendee: AttendeeRegistration, newGroup: string) => {
-      updateAttendeeGroup(attendee.id, newGroup);
+    async (attendee: AttendeeRegistration, newGroup: string) => {
       setAttendees((prev) =>
         prev.map((a) =>
           a.id === attendee.id ? { ...a, groupAssignment: newGroup } : a
         )
       );
+      try {
+        await updateFirestoreAttendee(attendee.id, {
+          groupId: newGroup.toLowerCase(),
+        });
+      } catch (err) {
+        console.error('Failed to update group in Firestore:', err);
+      }
     },
     []
   );
 
-  const handleResetStore = useCallback(() => {
-    const fresh = resetAttendeeStore();
-    setAttendees(fresh);
-    clearAllFilters();
-  }, [clearAllFilters]);
+  const handleDeleteAttendee = useCallback(async (attendee: AttendeeRegistration) => {
+    await deleteFirestoreAttendee(attendee.id);
+  }, []);
 
-  // Bulk import handler
+  // Bulk import handler with Firestore persistence
   const handleImportAttendees = useCallback(
-    (importedList: AttendeeRegistration[], overwriteExisting: boolean = true) => {
-      const result = importAttendeesBatch(importedList, overwriteExisting);
-      loadAttendees();
+    async (importedList: AttendeeRegistration[], overwriteExisting: boolean = true) => {
+      const mappedDocs = importedList.map((item) => ({
+        studentId: item.studentId,
+        name: item.fullName,
+        section: item.section,
+        year: item.yearLevel,
+        course: item.course,
+        registrationType: item.registrationType,
+        actualAmount: item.actualAmount !== undefined ? item.actualAmount : item.amount,
+        paymentStatus: item.paymentStatus,
+        groupId: (item.groupAssignment || 'kapre').toLowerCase(),
+        datePaid: item.datePaid,
+      }));
+
+      const result = await importFirestoreAttendees(mappedDocs, overwriteExisting, 'csv-importer');
+      await loadAttendees();
       return result;
     },
     [loadAttendees]
@@ -336,7 +400,7 @@ export function useAttendeeDatabase(initialGroupFilter?: string | null) {
     activeFiltersCount,
     handleUpdateAttendee,
     handleUpdateAttendeeGroup,
-    handleResetStore,
+    handleDeleteAttendee,
     handleImportAttendees,
     refreshData: loadAttendees,
   };

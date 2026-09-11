@@ -116,10 +116,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, onClose, o
           <div className="p-3 bg-[#FFFDF5] border-3 border-black text-xs font-bold uppercase space-y-1">
             <div className="flex items-center gap-1.5 font-mono text-[10px] text-gray-600">
               <span className="w-2 h-2 bg-[#FF6B6B] inline-block"></span>
-              <span>PHASE 1 NOTICE: MOCK REGISTRATION READY</span>
+              <span>FIRESTORE REGISTRATION PORTAL</span>
             </div>
             <p className="text-black font-black">
-              Enter your CCS department credentials (College of Computer Studies) to test the registration flow.
+              Enter the attendee's official information to create a verified registration record.
             </p>
           </div>
 
@@ -182,7 +182,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, onClose, o
             </span>
             <p className="text-xs font-bold text-gray-700 uppercase">
               You will be assigned to 1 of 12 Mythical Creature Groups (Kapre, Sigbin, Aswang, Tikbalang,
-              Chanak, Shokoy, Manananggal, Duwende, Magkukulam, Sirena, Diwata, or Otlum).
+              Chanak, Shokoy, Manananggal, Duwende, Mangkukulam, Sirena, Diwata, or Otlum).
             </p>
           </div>
 

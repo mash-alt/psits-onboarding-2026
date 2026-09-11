@@ -8,7 +8,7 @@ import { X, UserPlus, Save, AlertCircle, Shield } from 'lucide-react';
 export interface AddOfficerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: { name: string; email: string; role: 'ADMIN' | 'OFFICER'; status?: 'ACTIVE' | 'DISABLED' }) => void;
+  onSave: (data: { name: string; email: string; password?: string; role: 'ADMIN' | 'OFFICER'; status?: 'ACTIVE' | 'DISABLED' }) => Promise<void>;
   initialOfficer?: Officer | null;
 }
 
@@ -22,6 +22,9 @@ export const AddOfficerModal: React.FC<AddOfficerModalProps> = ({
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'ADMIN' | 'OFFICER'>('OFFICER');
   const [status, setStatus] = useState<'ACTIVE' | 'DISABLED'>('ACTIVE');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -30,18 +33,22 @@ export const AddOfficerModal: React.FC<AddOfficerModalProps> = ({
       setEmail(initialOfficer.email);
       setRole(initialOfficer.role);
       setStatus(initialOfficer.status);
+      setPassword('');
+      setConfirmPassword('');
     } else {
       setName('');
       setEmail('');
       setRole('OFFICER');
       setStatus('ACTIVE');
+      setPassword('');
+      setConfirmPassword('');
     }
     setError('');
   }, [initialOfficer, isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError('OFFICER NAME IS REQUIRED');
@@ -51,14 +58,31 @@ export const AddOfficerModal: React.FC<AddOfficerModalProps> = ({
       setError('VALID EMAIL ADDRESS IS REQUIRED');
       return;
     }
+    if (!initialOfficer && password.length < 6) {
+      setError('PASSWORD MUST BE AT LEAST 6 CHARACTERS');
+      return;
+    }
+    if (!initialOfficer && password !== confirmPassword) {
+      setError('PASSWORDS DO NOT MATCH');
+      return;
+    }
 
-    onSave({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      role,
-      status,
-    });
-    onClose();
+    setIsSaving(true);
+    setError('');
+    try {
+      await onSave({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password: initialOfficer ? undefined : password,
+        role,
+        status,
+      });
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message.toUpperCase() : 'OFFICER CREATION FAILED');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const isEditing = !!initialOfficer;
@@ -123,6 +147,30 @@ export const AddOfficerModal: React.FC<AddOfficerModalProps> = ({
             helperText="USED FOR ADMINISTRATIVE LOGIN AND NOTIFICATIONS"
           />
 
+          {!isEditing && (
+            <>
+              <Input
+                label="INITIAL PASSWORD"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={6}
+                required
+                autoComplete="new-password"
+                helperText="MINIMUM 6 CHARACTERS — SHARED ONLY WITH THIS OFFICER"
+              />
+              <Input
+                label="CONFIRM INITIAL PASSWORD"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                minLength={6}
+                required
+                autoComplete="new-password"
+              />
+            </>
+          )}
+
           <Select
             label="SYSTEM ROLE ASSIGNMENT"
             value={role}
@@ -147,13 +195,14 @@ export const AddOfficerModal: React.FC<AddOfficerModalProps> = ({
           )}
 
           <div className="pt-3 border-t-2 border-black flex items-center justify-end gap-3">
-            <Button variant="outline" size="md" type="button" onClick={onClose}>
+            <Button variant="outline" size="md" type="button" onClick={onClose} disabled={isSaving}>
               CANCEL
             </Button>
             <Button
               variant="primary"
               size="md"
               type="submit"
+              disabled={isSaving}
               leftIcon={
                 isEditing ? (
                   <Save className="w-4 h-4 stroke-[2.5]" />
@@ -162,7 +211,7 @@ export const AddOfficerModal: React.FC<AddOfficerModalProps> = ({
                 )
               }
             >
-              {isEditing ? 'SAVE CHANGES' : 'CREATE OFFICER'}
+              {isSaving ? 'SAVING...' : isEditing ? 'SAVE CHANGES' : 'CREATE OFFICER'}
             </Button>
           </div>
         </form>

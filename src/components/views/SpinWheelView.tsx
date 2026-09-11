@@ -5,12 +5,22 @@ import {
 } from '../../types';
 import { OFFICIAL_MYTHICAL_GROUPS } from '../../data/mythicalGroups';
 import {
-  getStoredAttendees,
-  getSpinHistory,
-  recordSpinWinner,
-  clearSpinHistory,
-  SpinWinnerRecord,
-} from '../../data/eventStore';
+  getAttendees as getFirestoreAttendees,
+  subscribeToAttendees,
+  getSpinHistory as getFirestoreSpinHistory,
+  createSpinRecord as createFirestoreSpinRecord,
+  clearSpinHistory as clearFirestoreSpinHistory,
+  removeSpinRecord as removeFirestoreSpinRecord,
+  setSpinWinnerRemoval,
+  subscribeToSpinHistory,
+  AttendeeDoc,
+  SpinHistoryDoc,
+  Prize,
+  getEventSettings,
+  subscribeToEventSettings,
+  updateEventSettings,
+} from '../../services/firebase';
+import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import {
@@ -30,7 +40,11 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
-  Crown
+  Crown,
+  Maximize2,
+  Minimize2,
+  Gift,
+  Pencil,
 } from 'lucide-react';
 
 export interface SpinWheelViewProps {
@@ -44,9 +58,12 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
   onNavigateToGroups,
   onSelectGroup,
 }) => {
+  const { user, isAdmin } = useAuth();
+  const wheelStageRef = useRef<HTMLDivElement>(null);
+
   // Master attendee data & spin history
   const [allAttendees, setAllAttendees] = useState<AttendeeRegistration[]>([]);
-  const [spinHistory, setSpinHistory] = useState<SpinWinnerRecord[]>([]);
+  const [spinHistory, setSpinHistory] = useState<SpinHistoryDoc[]>([]);
 
   // Removed/excluded winners tracking
   const [removedWinnerIds, setRemovedWinnerIds] = useState<Set<string>>(new Set());
@@ -57,6 +74,10 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
   const [sectionFilter, setSectionFilter] = useState('ALL');
   const [yearFilter, setYearFilter] = useState('ALL');
   const [groupFilter, setGroupFilter] = useState('ALL');
+  const [paymentFilter, setPaymentFilter] = useState('ALL');
+  const [participantPage, setParticipantPage] = useState(1);
+  const [participantPageSize, setParticipantPageSize] = useState(25);
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<Set<string>>(new Set());
 
   // Wheel animation states
   const [isSpinning, setIsSpinning] = useState(false);
@@ -67,6 +88,38 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
   const [currentScrambledId, setCurrentScrambledId] = useState<string>('ID // --------');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [prizes, setPrizes] = useState<Prize[]>([]);
+  const [selectedPrizeId, setSelectedPrizeId] = useState('');
+  const [prizeName, setPrizeName] = useState('');
+  const [prizeValue, setPrizeValue] = useState('');
+  const [editingPrizeId, setEditingPrizeId] = useState<string | null>(null);
+  const activePrize = prizes.find((prize) => prize.id === selectedPrizeId) || null;
+
+  // Map AttendeeDoc to AttendeeRegistration format
+  const mapDocToRegistration = (doc: AttendeeDoc): AttendeeRegistration => {
+    const rawGroup = doc.groupId || 'Unassigned';
+    const capitalizedGroup =
+      rawGroup.charAt(0).toUpperCase() + rawGroup.slice(1).toLowerCase();
+
+    return {
+      id: doc.id,
+      studentId: doc.studentId,
+      fullName: doc.name,
+      section: doc.section,
+      yearLevel: (doc.year as '1st Year' | '2nd Year' | '3rd Year' | '4th Year') || '1st Year',
+      course: doc.course,
+      registrationType: doc.registrationType,
+      amount: doc.actualAmount !== undefined ? doc.actualAmount : doc.expectedAmount,
+      expectedAmount: doc.expectedAmount,
+      actualAmount: doc.actualAmount,
+      paymentStatus: doc.paymentStatus,
+      datePaid: doc.datePaid,
+      groupAssignment: capitalizedGroup,
+      registeredAt: doc.registeredAt,
+      status: 'CONFIRMED',
+    };
+  };
 
   // Audio synthesizer using Web Audio API
   const playArcadeTone = (freq: number, duration: number = 0.06, type: OscillatorType = 'square') => {
@@ -91,13 +144,65 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
     }
   };
 
-  // Load data on mount
+  // Load data on mount & subscribe to Firestore updates
   useEffect(() => {
-    const attendees = getStoredAttendees();
-    const history = getSpinHistory();
-    setAllAttendees(attendees);
-    setSpinHistory(history);
+    getFirestoreAttendees().then((docs) => {
+      setAllAttendees(docs.map(mapDocToRegistration));
+    });
+    getFirestoreSpinHistory().then(setSpinHistory);
+
+    const unsubAttendees = subscribeToAttendees((docs) => {
+      setAllAttendees(docs.map(mapDocToRegistration));
+    });
+
+    const unsubSpins = subscribeToSpinHistory((history) => {
+      setSpinHistory(history);
+    });
+
+    return () => {
+      unsubAttendees();
+      unsubSpins();
+    };
   }, []);
+
+  useEffect(() => {
+    getEventSettings().then((settings) => setPrizes(settings.prizes || []));
+    return subscribeToEventSettings((settings) => setPrizes(settings.prizes || []));
+  }, []);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === wheelStageRef.current);
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (!wheelStageRef.current) return;
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await wheelStageRef.current.requestFullscreen();
+  };
+
+  const savePrize = async () => {
+    const name = prizeName.trim();
+    const value = prizeValue.trim();
+    if (!name || !value || !isAdmin) return;
+    const next = editingPrizeId
+      ? prizes.map((prize) => prize.id === editingPrizeId ? { ...prize, name, value } : prize)
+      : [...prizes, { id: `prize-${Date.now().toString(36)}`, name, value }];
+    await updateEventSettings({ prizes: next }, user?.email || 'admin');
+    setPrizes(next);
+    setPrizeName('');
+    setPrizeValue('');
+    setEditingPrizeId(null);
+  };
+
+  const removePrize = async (id: string) => {
+    if (!isAdmin) return;
+    const next = prizes.filter((prize) => prize.id !== id);
+    await updateEventSettings({ prizes: next }, user?.email || 'admin');
+    if (selectedPrizeId === id) setSelectedPrizeId('');
+    if (editingPrizeId === id) { setEditingPrizeId(null); setPrizeName(''); setPrizeValue(''); }
+  };
 
   // Compute distinct filter options dynamically
   const filterOptions = useMemo(() => {
@@ -110,11 +215,8 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
   }, [allAttendees]);
 
   // Filtered participant pool (kept in memory, NOT rendered as 500+ DOM nodes)
-  const eligiblePool = useMemo(() => {
+  const filteredParticipants = useMemo(() => {
     return allAttendees.filter((attendee) => {
-      // Check if excluded by REMOVE WINNER
-      if (removedWinnerIds.has(attendee.studentId)) return false;
-
       // Search query filter
       const matchesSearch =
         searchQuery.trim() === '' ||
@@ -125,6 +227,7 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
       const matchesCourse = courseFilter === 'ALL' || attendee.course === courseFilter;
       const matchesSection = sectionFilter === 'ALL' || attendee.section === sectionFilter;
       const matchesYear = yearFilter === 'ALL' || attendee.yearLevel === yearFilter;
+      const matchesPayment = paymentFilter === 'ALL' || attendee.paymentStatus === paymentFilter;
 
       // Group filter (handling Magkukulam / Mangkukulam alias)
       let matchesGroup = true;
@@ -138,9 +241,35 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
         }
       }
 
-      return matchesSearch && matchesCourse && matchesSection && matchesYear && matchesGroup;
+      return matchesSearch && matchesCourse && matchesSection && matchesYear && matchesPayment && matchesGroup;
     });
-  }, [allAttendees, removedWinnerIds, searchQuery, courseFilter, sectionFilter, yearFilter, groupFilter]);
+  }, [allAttendees, searchQuery, courseFilter, sectionFilter, yearFilter, paymentFilter, groupFilter]);
+
+  const eligiblePool = useMemo(
+    () => filteredParticipants.filter((attendee) => !removedWinnerIds.has(attendee.studentId)),
+    [filteredParticipants, removedWinnerIds]
+  );
+
+  const participantPages = Math.max(1, Math.ceil(filteredParticipants.length / participantPageSize));
+  const safeParticipantPage = Math.min(participantPage, participantPages);
+  const paginatedParticipants = useMemo(() => {
+    const start = (safeParticipantPage - 1) * participantPageSize;
+    return filteredParticipants.slice(start, start + participantPageSize);
+  }, [filteredParticipants, safeParticipantPage, participantPageSize]);
+
+  const setParticipantExcluded = (studentIds: string[], excluded: boolean) => {
+    setRemovedWinnerIds((previous) => {
+      const next = new Set(previous);
+      studentIds.forEach((studentId) => excluded ? next.add(studentId) : next.delete(studentId));
+      return next;
+    });
+  };
+
+  const toggleParticipantSelection = (studentId: string) => setSelectedParticipantIds((previous) => {
+    const next = new Set(previous);
+    next.has(studentId) ? next.delete(studentId) : next.add(studentId);
+    return next;
+  });
 
   // Execute Spin
   const handleSpin = () => {
@@ -206,17 +335,19 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
       setCurrentScrambledId(`STUDENT ID: ${selectedWinner.studentId}`);
       setShowWinnerModal(true);
 
-      // Record to persistent spin history
-      const savedRecord = recordSpinWinner({
+      // Record to persistent Firestore spinHistory collection
+      createFirestoreSpinRecord({
+        winnerAttendeeId: selectedWinner.id,
         winnerName: selectedWinner.fullName,
-        studentId: selectedWinner.studentId,
-        course: selectedWinner.course,
-        section: selectedWinner.section,
-        yearLevel: selectedWinner.yearLevel,
-        groupAssignment: matchedGroup!.name,
+        winnerStudentId: selectedWinner.studentId,
+        groupId: matchedGroup!.id,
+        spunBy: user?.email || 'officer',
+        prizeId: activePrize?.id,
+        prizeName: activePrize?.name,
+        prizeValue: activePrize?.value,
+      }).catch((err) => {
+        console.error('Error saving spin record to Firestore:', err);
       });
-
-      setSpinHistory((prev) => [savedRecord, ...prev]);
 
       // Triumphant fanfare
       playArcadeTone(523.25, 0.15, 'triangle'); // C5
@@ -243,6 +374,9 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
       next.add(studentId);
       return next;
     });
+    spinHistory.filter((record) => record.winnerStudentId === studentId).forEach((record) => {
+      setSpinWinnerRemoval(record.id, true).catch(() => undefined);
+    });
   };
 
   // Re-admit winner to pool
@@ -252,13 +386,20 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
       next.delete(studentId);
       return next;
     });
+    spinHistory.filter((record) => record.winnerStudentId === studentId).forEach((record) => {
+      setSpinWinnerRemoval(record.id, false).catch(() => undefined);
+    });
   };
 
-  // Clear spin history
-  const handleClearHistory = () => {
+  // Clear spin history in Firestore
+  const handleClearHistory = async () => {
     if (window.confirm('Are you sure you want to clear the entire spin history log?')) {
-      clearSpinHistory();
-      setSpinHistory([]);
+      try {
+        await clearFirestoreSpinHistory();
+        setSpinHistory([]);
+      } catch (err) {
+        console.error('Error clearing spin history:', err);
+      }
     }
   };
 
@@ -313,11 +454,62 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
         </div>
       </div>
 
+      <section className="bg-white border-4 border-black shadow-[6px_6px_0px_#000000] overflow-hidden">
+        <div className="bg-black text-[#FFD93D] px-4 py-3 flex flex-wrap items-center justify-between gap-3 font-mono font-black uppercase text-xs">
+          <span>Participant Management</span>
+          <span className="text-white">Total: {allAttendees.length} // Eligible: {allAttendees.length - removedWinnerIds.size} // Excluded: {removedWinnerIds.size}</span>
+        </div>
+        <div className="p-4 border-b-4 border-black grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <input value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setParticipantPage(1); }} placeholder="SEARCH ID OR NAME" className="border-3 border-black px-3 py-2 font-mono text-xs font-bold" aria-label="Search spin participants" />
+          <select value={courseFilter} onChange={(event) => { setCourseFilter(event.target.value); setParticipantPage(1); }} className="border-3 border-black px-2 py-2 font-mono text-xs font-bold"><option value="ALL">ALL COURSES</option>{filterOptions.courses.map((course) => <option key={course} value={course}>{course}</option>)}</select>
+          <select value={sectionFilter} onChange={(event) => { setSectionFilter(event.target.value); setParticipantPage(1); }} className="border-3 border-black px-2 py-2 font-mono text-xs font-bold"><option value="ALL">ALL SECTIONS</option>{filterOptions.sections.map((section) => <option key={section} value={section}>{section}</option>)}</select>
+          <select value={yearFilter} onChange={(event) => { setYearFilter(event.target.value); setParticipantPage(1); }} className="border-3 border-black px-2 py-2 font-mono text-xs font-bold"><option value="ALL">ALL YEARS</option>{filterOptions.years.map((year) => <option key={year} value={year}>{year}</option>)}</select>
+          <select value={groupFilter} onChange={(event) => { setGroupFilter(event.target.value); setParticipantPage(1); }} className="border-3 border-black px-2 py-2 font-mono text-xs font-bold"><option value="ALL">ALL GROUPS</option>{filterOptions.groups.map((group) => <option key={group} value={group}>{group}</option>)}</select>
+          <select value={paymentFilter} onChange={(event) => { setPaymentFilter(event.target.value); setParticipantPage(1); }} className="border-3 border-black px-2 py-2 font-mono text-xs font-bold"><option value="ALL">ALL PAYMENTS</option><option value="PAID">PAID</option><option value="PENDING">PENDING</option><option value="UNPAID">UNPAID</option></select>
+          <select value={participantPageSize} onChange={(event) => { setParticipantPageSize(Number(event.target.value)); setParticipantPage(1); }} className="border-3 border-black px-2 py-2 font-mono text-xs font-bold" aria-label="Participants per page"><option value={25}>25 PER PAGE</option><option value={50}>50 PER PAGE</option><option value={100}>100 PER PAGE</option></select>
+          <div className="flex gap-2"><Button variant="dark" size="sm" onClick={() => setParticipantExcluded(Array.from(selectedParticipantIds), true)} disabled={selectedParticipantIds.size === 0}>EXCLUDE SELECTED</Button><Button variant="outline" size="sm" onClick={() => setParticipantExcluded(Array.from(selectedParticipantIds), false)} disabled={selectedParticipantIds.size === 0}>INCLUDE</Button></div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[850px] text-left text-xs"><thead className="bg-[#FFFDF5] border-b-3 border-black font-mono font-black uppercase"><tr><th className="p-3"><input type="checkbox" aria-label="Select all on this page" checked={paginatedParticipants.length > 0 && paginatedParticipants.every((participant) => selectedParticipantIds.has(participant.studentId))} onChange={(event) => setSelectedParticipantIds((previous) => { const next = new Set(previous); paginatedParticipants.forEach((participant) => event.target.checked ? next.add(participant.studentId) : next.delete(participant.studentId)); return next; })} /></th><th className="p-3">Student ID</th><th className="p-3">Name</th><th className="p-3">Course</th><th className="p-3">Section</th><th className="p-3">Year</th><th className="p-3">Group</th><th className="p-3">Status</th><th className="p-3">Pool</th></tr></thead><tbody>
+            {paginatedParticipants.map((participant) => { const excluded = removedWinnerIds.has(participant.studentId); return <tr key={participant.id} className="border-b-2 border-black"><td className="p-3"><input type="checkbox" checked={selectedParticipantIds.has(participant.studentId)} onChange={() => toggleParticipantSelection(participant.studentId)} aria-label={`Select ${participant.fullName}`} /></td><td className="p-3 font-mono font-black">{participant.studentId}</td><td className="p-3 font-black uppercase">{participant.fullName}</td><td className="p-3">{participant.course}</td><td className="p-3">{participant.section}</td><td className="p-3">{participant.yearLevel}</td><td className="p-3">{participant.groupAssignment}</td><td className="p-3">{participant.paymentStatus}</td><td className="p-3"><button onClick={() => setParticipantExcluded([participant.studentId], !excluded)} className={`border-2 border-black px-2 py-1 font-black ${excluded ? 'bg-white' : 'bg-[#FF6B6B]'}`}>{excluded ? 'INCLUDE' : 'EXCLUDE'}</button></td></tr>; })}
+            {paginatedParticipants.length === 0 && <tr><td colSpan={9} className="p-8 text-center font-black uppercase">{allAttendees.length === 0 ? 'No participants. There are currently no registered attendees.' : 'No matching participants.'}</td></tr>}
+          </tbody></table>
+        </div>
+        <div className="p-3 bg-[#FFFDF5] flex items-center justify-between gap-3 font-mono text-xs font-black"><span>PAGE {safeParticipantPage} OF {participantPages} // SELECT ALL ON THIS PAGE</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={safeParticipantPage === 1} onClick={() => setParticipantPage((page) => Math.max(1, page - 1))}>PREV</Button><Button variant="outline" size="sm" disabled={safeParticipantPage === participantPages} onClick={() => setParticipantPage((page) => Math.min(participantPages, page + 1))}>NEXT</Button></div></div>
+      </section>
+
+      <section className="bg-white border-4 border-black p-5 shadow-[6px_6px_0px_#000000] space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-3 border-black pb-3">
+          <div className="flex items-center gap-2"><Gift className="w-5 h-5" /><div><h2 className="font-black uppercase">Prize board</h2><p className="text-[10px] font-mono font-bold uppercase text-gray-600">Choose the prize awarded by the next spin</p></div></div>
+          <select value={selectedPrizeId} onChange={(event) => setSelectedPrizeId(event.target.value)} className="border-3 border-black px-3 py-2 font-mono font-black text-xs bg-[#FFFDF5]" aria-label="Prize for next spin">
+            <option value="">NO PRIZE SELECTED</option>
+            {prizes.map((prize) => <option key={prize.id} value={prize.id}>{prize.name.toUpperCase()} — {prize.value}</option>)}
+          </select>
+        </div>
+        {isAdmin ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px_auto] gap-2">
+              <input value={prizeName} onChange={(event) => setPrizeName(event.target.value)} placeholder="PRIZE NAME — E.G. GCASH" className="border-3 border-black px-3 py-2 font-mono text-xs font-bold" />
+              <input value={prizeValue} onChange={(event) => setPrizeValue(event.target.value)} placeholder="VALUE — E.G. ₱100" className="border-3 border-black px-3 py-2 font-mono text-xs font-bold" />
+              <Button variant="primary" size="sm" onClick={() => savePrize().catch((error) => console.error('Failed to save prize:', error))}>{editingPrizeId ? 'UPDATE' : 'ADD PRIZE'}</Button>
+            </div>
+            {editingPrizeId && <button onClick={() => { setEditingPrizeId(null); setPrizeName(''); setPrizeValue(''); }} className="text-[10px] font-mono font-black uppercase underline">Cancel edit</button>}
+            {prizes.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {prizes.map((prize) => <div key={prize.id} className={`border-3 border-black px-3 py-2 flex items-center justify-between gap-2 ${selectedPrizeId === prize.id ? 'bg-[#FFD93D]' : 'bg-[#FFFDF5]'}`}><button onClick={() => setSelectedPrizeId(prize.id)} className="text-left min-w-0"><span className="block font-black uppercase text-xs truncate">{prize.name}</span><span className="font-mono font-bold text-[11px]">{prize.value}</span></button><span className="flex gap-1"><button aria-label={`Edit ${prize.name}`} onClick={() => { setEditingPrizeId(prize.id); setPrizeName(prize.name); setPrizeValue(prize.value); }} className="p-1 border-2 border-black bg-white"><Pencil className="w-3 h-3" /></button><button aria-label={`Remove ${prize.name}`} onClick={() => removePrize(prize.id).catch((error) => console.error('Failed to remove prize:', error))} className="p-1 border-2 border-black bg-[#FF6B6B]"><Trash2 className="w-3 h-3" /></button></span></div>)}
+            </div>}
+          </>
+        ) : <p className="text-[10px] font-mono font-bold uppercase text-gray-600">An administrator manages the prize board. You can select an available prize for this draw.</p>}
+      </section>
+
       {/* Main Wheel Arena Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Visual Wheel Stage & High-Speed Readout (7 Cols) */}
         <div className="lg:col-span-7 space-y-6">
-          <div className="bg-white border-8 border-black p-6 sm:p-8 shadow-[12px_12px_0px_#000000] flex flex-col items-center relative overflow-hidden">
+          <div ref={wheelStageRef} className={`bg-white border-8 border-black p-6 sm:p-8 shadow-[12px_12px_0px_#000000] flex flex-col items-center relative overflow-hidden ${isFullscreen ? 'w-screen h-screen justify-center bg-[#FFFDF5]' : ''}`}>
+            <button onClick={() => toggleFullscreen().catch(() => undefined)} className="absolute right-4 top-4 z-30 p-2 bg-white border-3 border-black shadow-[3px_3px_0px_#000000]" aria-label={isFullscreen ? 'Exit fullscreen' : 'Open fullscreen'}>
+              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+            {activePrize && <div className="absolute left-4 top-4 z-30 bg-[#FFD93D] border-3 border-black px-3 py-2 shadow-[3px_3px_0px_#000000] text-center"><div className="text-[9px] font-mono font-black uppercase">Prize for this draw</div><div className="font-black uppercase text-sm">{activePrize.name} — {activePrize.value}</div></div>}
             {/* Top Pointer Ticker */}
             <div className="z-20 -mb-5 flex flex-col items-center">
               <div className="w-0 h-0 border-l-[18px] border-l-transparent border-r-[18px] border-r-transparent border-t-[34px] border-t-black drop-shadow-[0_4px_0_#FFD93D] animate-bounce" />
@@ -325,7 +517,7 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
             </div>
 
             {/* The Single Lightweight Canvas / SVG Wheel (Zero 500+ DOM Nodes) */}
-            <div className="relative w-[320px] h-[320px] sm:w-[420px] sm:h-[420px] my-4">
+            <div className={`relative my-4 ${isFullscreen ? 'w-[min(70vw,55vh)] h-[min(70vw,55vh)]' : 'w-[320px] h-[320px] sm:w-[420px] sm:h-[420px]'}`}>
               <svg
                 viewBox="0 0 400 400"
                 className="w-full h-full filter drop-shadow-[6px_6px_0px_#000000]"
@@ -687,6 +879,13 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
                 </div>
               </div>
 
+              {activePrize && (
+                <div className="bg-[#FFD93D] border-4 border-black p-4 text-center shadow-[4px_4px_0px_#000000]">
+                  <div className="text-[10px] font-mono font-black uppercase">Awarded prize</div>
+                  <div className="text-2xl font-black uppercase">{activePrize.name} — {activePrize.value}</div>
+                </div>
+              )}
+
               {/* Course & Section Details */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-2.5 bg-white border-2 border-black">
@@ -818,6 +1017,7 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
                 <th className="py-3 px-4">STUDENT ID</th>
                 <th className="py-3 px-4">COURSE & SECTION</th>
                 <th className="py-3 px-4">MYTHICAL GROUP</th>
+                <th className="py-3 px-4">PRIZE</th>
                 <th className="py-3 px-4">TIMESTAMP</th>
                 <th className="py-3 px-4 text-right">POOL STATUS</th>
               </tr>
@@ -825,10 +1025,14 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
             <tbody className="divide-y-2 divide-black bg-white">
               {spinHistory.length > 0 ? (
                 spinHistory.map((record) => {
-                  const isExcluded = removedWinnerIds.has(record.studentId);
+                  const studentId = record.winnerStudentId || (record as any).studentId || '';
+                  const isExcluded = removedWinnerIds.has(studentId);
                   const groupObj = OFFICIAL_MYTHICAL_GROUPS.find(
-                    (g) => g.name.toLowerCase() === record.groupAssignment.toLowerCase()
+                    (g) =>
+                      g.id === (record.groupId || '').toLowerCase() ||
+                      g.name.toLowerCase() === (record.groupId || (record as any).groupAssignment || '').toLowerCase()
                   );
+                  const groupName = groupObj?.name || record.groupId || 'Kapre';
 
                   return (
                     <tr key={record.id} className="hover:bg-[#FFFDF5] transition-colors">
@@ -840,11 +1044,14 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
                       </td>
                       <td className="py-3 px-4">
                         <span className="bg-[#FFD93D] text-black px-1.5 py-0.5 border border-black font-black">
-                          {record.studentId}
+                          {studentId}
                         </span>
                       </td>
+                      <td className="py-3 px-4 font-black uppercase">
+                        {record.prizeName ? <><span>{record.prizeName}</span><span className="block text-[10px] font-mono">{record.prizeValue}</span></> : '—'}
+                      </td>
                       <td className="py-3 px-4 font-bold uppercase text-gray-800">
-                        {record.section} • {record.yearLevel}
+                        {(record as any).section || 'CCS'} • {(record as any).yearLevel || 'Student'}
                       </td>
                       <td className="py-3 px-4">
                         <span
@@ -855,21 +1062,21 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
                           }}
                         >
                           <span>{groupObj?.symbol || '⚡'}</span>
-                          <span>{record.groupAssignment}</span>
+                          <span>{groupName}</span>
                         </span>
                       </td>
                       <td className="py-3 px-4 text-gray-600 font-bold">{record.timestamp}</td>
                       <td className="py-3 px-4 text-right">
                         {isExcluded ? (
                           <button
-                            onClick={() => handleIncludeWinner(record.studentId)}
+                            onClick={() => handleIncludeWinner(record.winnerStudentId)}
                             className="text-[10px] font-black uppercase bg-white hover:bg-[#FFD93D] text-black px-2 py-1 border border-black cursor-pointer shadow-[1px_1px_0px_#000000]"
                           >
                             RE-INCLUDE
                           </button>
                         ) : (
                           <button
-                            onClick={() => handleRemoveWinner(record.studentId)}
+                            onClick={() => handleRemoveWinner(record.winnerStudentId)}
                             className="text-[10px] font-black uppercase bg-[#FF6B6B] text-white px-2 py-1 border border-black cursor-pointer shadow-[1px_1px_0px_#000000]"
                           >
                             REMOVE
@@ -881,7 +1088,7 @@ export const SpinWheelView: React.FC<SpinWheelViewProps> = ({
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-gray-500 font-bold uppercase">
+                  <td colSpan={8} className="py-8 text-center text-gray-500 font-bold uppercase">
                     NO SPINS RECORDED YET. CLICK &ldquo;SPIN THE WHEEL NOW&rdquo; TO COMMENCE ACTIVITY!
                   </td>
                 </tr>

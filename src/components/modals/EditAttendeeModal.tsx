@@ -10,7 +10,7 @@ export interface EditAttendeeModalProps {
   attendee: AttendeeRegistration | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (updated: AttendeeRegistration) => void;
+  onSave: (updated: AttendeeRegistration) => Promise<void>;
 }
 
 export const EditAttendeeModal: React.FC<EditAttendeeModalProps> = ({
@@ -80,7 +80,7 @@ export const EditAttendeeModal: React.FC<EditAttendeeModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim()) {
       setError('FULL NAME IS REQUIRED');
@@ -90,11 +90,10 @@ export const EditAttendeeModal: React.FC<EditAttendeeModalProps> = ({
       setError('STUDENT ID MUST BE EXACTLY 8 NUMERIC DIGITS');
       return;
     }
-
     const updated: AttendeeRegistration = {
       ...attendee,
-      fullName: fullName.trim(),
       studentId: studentId.trim(),
+      fullName: fullName.trim(),
       course,
       section: section.trim().toUpperCase(),
       yearLevel,
@@ -108,8 +107,12 @@ export const EditAttendeeModal: React.FC<EditAttendeeModalProps> = ({
       status,
     };
 
-    onSave(updated);
-    onClose();
+    try {
+      await onSave(updated);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message.toUpperCase() : 'UNABLE TO SAVE ATTENDEE RECORD');
+    }
   };
 
   return (

@@ -22,6 +22,8 @@ export interface EventConfig {
   eventName: string;
   tagline: string;
   eventDate: string;
+  callTime: string;
+  venue: string;
   registrationOpeningDate: string;
   registrationClosingDate: string;
   earlyBirdFee: number;

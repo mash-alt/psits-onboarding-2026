@@ -1,12 +1,17 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MythicalCreatureGroup, AttendeeRegistration } from '../../types';
 import { OFFICIAL_MYTHICAL_GROUPS } from '../../data/mythicalGroups';
 import {
-  getStoredAttendees,
-  getStoredMythicalGroups,
-  randomizeAllAttendeesAcrossGroups,
+  getGroups as getFirestoreGroups,
+  subscribeToGroups,
+  getAttendees as getFirestoreAttendees,
+  subscribeToAttendees,
+  randomizeGroups as randomizeFirestoreGroups,
   RandomizeGroupsResult,
-} from '../../data/eventStore';
+  GroupDoc,
+  AttendeeDoc,
+} from '../../services/firebase';
+import { useAuth } from '../../context/AuthContext';
 import { GroupRosterModal } from '../modals/GroupRosterModal';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -36,8 +41,9 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
   onNavigateToAttendees,
   onNavigateToSpinWheel,
 }) => {
-  const [attendees, setAttendees] = useState<AttendeeRegistration[]>([]);
-  const [groups, setGroups] = useState<MythicalCreatureGroup[]>([]);
+  const { user, role } = useAuth();
+  const [attendees, setAttendees] = useState<AttendeeDoc[]>([]);
+  const [groups, setGroups] = useState<GroupDoc[]>([]);
   const [selectedRosterGroup, setSelectedRosterGroup] = useState<MythicalCreatureGroup | null>(null);
   const [colorFilter, setColorFilter] = useState<string>('ALL');
   const [searchFilter, setSearchFilter] = useState<string>('');
@@ -47,16 +53,30 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
   const [isRandomizingAnimation, setIsRandomizingAnimation] = useState<boolean>(false);
   const [randomizeResult, setRandomizeResult] = useState<RandomizeGroupsResult | null>(null);
 
-  // Load attendees & groups
-  const loadData = () => {
-    const loadedAttendees = getStoredAttendees();
-    const storedGroups = getStoredMythicalGroups();
-    setAttendees(loadedAttendees);
-    setGroups(storedGroups);
+  // Load attendees & groups from Firestore
+  const loadData = async () => {
+    try {
+      const [gList, aList] = await Promise.all([
+        getFirestoreGroups(),
+        getFirestoreAttendees(),
+      ]);
+      setGroups(gList);
+      setAttendees(aList);
+    } catch (err) {
+      console.error('Error loading groups view data:', err);
+    }
   };
 
   useEffect(() => {
     loadData();
+
+    const unsubGroups = subscribeToGroups((gList) => setGroups(gList));
+    const unsubAttendees = subscribeToAttendees((aList) => setAttendees(aList));
+
+    return () => {
+      unsubGroups();
+      unsubAttendees();
+    };
   }, []);
 
   // Compute live member counts and percentages for each of the 12 groups
@@ -64,15 +84,13 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
     const counts: Record<string, number> = {};
     // initialize all 12 official groups
     OFFICIAL_MYTHICAL_GROUPS.forEach((g) => {
+      counts[g.id] = 0;
       counts[g.name.toLowerCase()] = 0;
     });
 
     attendees.forEach((att) => {
-      const assigned = (att.groupAssignment || '').toLowerCase();
-      // Handle Magkukulam / Mangkukulam mapping
-      if (assigned === 'magkukulam' || assigned === 'mangkukulam') {
-        counts['magkukulam'] = (counts['magkukulam'] || 0) + 1;
-      } else if (counts[assigned] !== undefined) {
+      const assigned = (att.groupId || '').toLowerCase();
+      if (counts[assigned] !== undefined) {
         counts[assigned] += 1;
       }
     });
@@ -86,16 +104,19 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
     };
   }, [attendees]);
 
-  // Execute random group assignment across all 12 groups
-  const handleExecuteRandomize = () => {
+  // Execute random group assignment across all 12 groups in Firestore
+  const handleExecuteRandomize = async () => {
     setIsRandomizingAnimation(true);
 
-    setTimeout(() => {
-      const result = randomizeAllAttendeesAcrossGroups();
+    try {
+      const result = await randomizeFirestoreGroups(user?.email || 'officer');
       setRandomizeResult(result);
-      loadData();
+      await loadData();
+    } catch (err) {
+      console.error('Randomize groups error:', err);
+    } finally {
       setIsRandomizingAnimation(false);
-    }, 900);
+    }
   };
 
   // Filter groups
@@ -557,6 +578,7 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
         isOpen={Boolean(selectedRosterGroup)}
         onClose={() => setSelectedRosterGroup(null)}
         totalEventAttendees={groupStats.total}
+        attendees={attendees}
       />
     </div>
   );

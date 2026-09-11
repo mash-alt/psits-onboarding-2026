@@ -21,7 +21,7 @@ export interface EventSettingsViewProps {
   currentConfig: EventConfig;
   currentUserRole: UserRole;
   totalHistoricalAttendees: number;
-  onSaveConfig: (newConfig: EventConfig) => void;
+  onSaveConfig: (newConfig: EventConfig) => Promise<void>;
 }
 
 export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
@@ -33,6 +33,8 @@ export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
   const [eventName, setEventName] = useState(currentConfig.eventName);
   const [tagline, setTagline] = useState(currentConfig.tagline || '');
   const [eventDate, setEventDate] = useState(currentConfig.eventDate);
+  const [callTime, setCallTime] = useState(currentConfig.callTime || '17:00');
+  const [venue, setVenue] = useState(currentConfig.venue || 'Main Auditorium');
   const [registrationOpeningDate, setRegistrationOpeningDate] = useState(
     currentConfig.registrationOpeningDate || '2026-08-20'
   );
@@ -46,12 +48,15 @@ export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
   );
   const [currency, setCurrency] = useState(currentConfig.currency || 'PHP');
   const [savedToast, setSavedToast] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isConfirmPriceModalOpen, setIsConfirmPriceModalOpen] = useState(false);
 
   useEffect(() => {
     setEventName(currentConfig.eventName);
     setTagline(currentConfig.tagline || '');
     setEventDate(currentConfig.eventDate);
+    setCallTime(currentConfig.callTime || '17:00');
+    setVenue(currentConfig.venue || 'Main Auditorium');
     setRegistrationOpeningDate(currentConfig.registrationOpeningDate || '2026-08-20');
     setRegistrationClosingDate(currentConfig.registrationClosingDate || '2026-10-20');
     setEarlyBirdFee(currentConfig.earlyBirdFee);
@@ -73,16 +78,31 @@ export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
       // Require explicit price confirmation
       setIsConfirmPriceModalOpen(true);
     } else {
-      commitSave();
+      void commitSave();
     }
   };
 
-  const commitSave = () => {
+  const commitSave = async () => {
+    setSaveError(null);
+    if (!eventName.trim()) {
+      setSaveError('An event name is required.');
+      return;
+    }
+    if (!Number.isFinite(earlyBirdFee) || !Number.isFinite(regularFee) || earlyBirdFee < 0 || regularFee < 0) {
+      setSaveError('Registration fees must be valid, non-negative amounts.');
+      return;
+    }
+    if (registrationOpeningDate > registrationClosingDate) {
+      setSaveError('The registration opening date cannot be after the closing date.');
+      return;
+    }
     const updated: EventConfig = {
       ...currentConfig,
       eventName: eventName.trim(),
       tagline: tagline.trim(),
       eventDate,
+      callTime,
+      venue: venue.trim(),
       registrationOpeningDate,
       registrationClosingDate,
       earlyBirdFee: Number(earlyBirdFee),
@@ -90,10 +110,14 @@ export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
       registrationStatus,
       currency,
     };
-    onSaveConfig(updated);
-    setIsConfirmPriceModalOpen(false);
-    setSavedToast(true);
-    setTimeout(() => setSavedToast(false), 4000);
+    try {
+      await onSaveConfig(updated);
+      setIsConfirmPriceModalOpen(false);
+      setSavedToast(true);
+      window.setTimeout(() => setSavedToast(false), 5000);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Unable to save event settings.');
+    }
   };
 
   return (
@@ -117,12 +141,6 @@ export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
           </p>
         </div>
 
-        {savedToast && (
-          <div className="p-3 bg-[#10B981] text-black border-2 border-black font-mono font-black text-xs flex items-center gap-2 shadow-[2px_2px_0px_#000000] animate-fadeIn">
-            <CheckCircle2 className="w-4 h-4 stroke-[3]" />
-            <span>EVENT SETTINGS SUCCESSFULLY UPDATED</span>
-          </div>
-        )}
       </div>
 
       {!isAdmin && (
@@ -134,6 +152,13 @@ export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
               Officers can inspect active parameters, fee structures, and registration windows, but administrative privilege is required to commit changes.
             </p>
           </div>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="p-4 bg-[#FF6B6B] border-4 border-black font-mono text-xs font-bold text-black flex items-start gap-3 shadow-[4px_4px_0px_#000000]">
+          <AlertTriangle className="w-5 h-5 stroke-[3] shrink-0" />
+          <span className="uppercase">{saveError}</span>
         </div>
       )}
 
@@ -200,6 +225,25 @@ export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
               disabled={!isAdmin}
               required
               helperText="MAIN ACQUAINTANCE PARTY DATE"
+            />
+
+            <Input
+              label="CALL TIME"
+              type="time"
+              value={callTime}
+              onChange={(e) => setCallTime(e.target.value)}
+              disabled={!isAdmin}
+              required
+              helperText="OFFICIAL AUDIENCE CALL TIME"
+            />
+
+            <Input
+              label="VENUE"
+              value={venue}
+              onChange={(e) => setVenue(e.target.value)}
+              disabled={!isAdmin}
+              required
+              helperText="EVENT LOCATION SHOWN TO ATTENDEES"
             />
 
             <Input
@@ -343,6 +387,14 @@ export const EventSettingsView: React.FC<EventSettingsViewProps> = ({
         currency={currency}
         totalHistoricalAttendees={totalHistoricalAttendees}
       />
+
+      {savedToast && (
+        <div role="status" className="fixed z-[100] right-5 top-5 max-w-sm p-4 bg-[#10B981] text-black border-4 border-black font-mono font-black text-xs flex items-start gap-3 shadow-[6px_6px_0px_#000000] animate-fadeIn">
+          <CheckCircle2 className="w-5 h-5 stroke-[3] shrink-0" />
+          <span>EVENT SETTINGS SAVED SUCCESSFULLY</span>
+          <button type="button" onClick={() => setSavedToast(false)} className="ml-1 underline">DISMISS</button>
+        </div>
+      )}
     </div>
   );
 };

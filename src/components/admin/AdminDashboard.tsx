@@ -13,23 +13,29 @@ import { Badge } from '../ui/Badge';
 import { OfficerManagement } from './OfficerManagement';
 import { EventSettingsView } from './EventSettingsView';
 import { GroupConfigView } from './GroupConfigView';
+import { useAuth } from '../../context/AuthContext';
 import {
-  getEventConfig,
-  saveEventConfig,
-  getStoredAttendees,
-  getStoredOfficers,
-  addOfficer,
-  updateOfficer,
-  deleteOfficer,
-  toggleOfficerStatus,
-  changeOfficerRole,
-  getStoredMythicalGroups,
-  updateGroupConfig,
-  resetGroupConfig,
-  calculateTotalRevenue,
-  getActiveRole,
-  setActiveRole,
-} from '../../data/eventStore';
+  subscribeToUsers,
+  subscribeToEventSettings,
+  subscribeToGroups,
+  subscribeToAttendees,
+  getUsers,
+  getEventSettings,
+  getGroups,
+  getAttendees,
+  createOfficerWithPassword,
+  updateOfficer as updateOfficerFirestore,
+  deleteOfficer as deleteOfficerFirestore,
+  toggleOfficerStatus as toggleOfficerStatusFirestore,
+  changeOfficerRole as changeOfficerRoleFirestore,
+  updateEventSettings,
+  updateGroupConfig as updateGroupConfigFirestore,
+  resetGroupsToDefault,
+  UserDoc,
+  EventSettingsDoc,
+  GroupDoc,
+  AttendeeDoc,
+} from '../../services/firebase';
 import {
   Shield,
   ShieldAlert,
@@ -69,32 +75,136 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onNavigateToHome,
   initialSubSection = 'DASHBOARD',
 }) => {
+  const { user, userProfile, role: authRole } = useAuth();
   const [activeSubSection, setActiveSubSection] = useState<AdminSubSection>(initialSubSection);
-  const [currentRole, setCurrentRole] = useState<UserRole>(getActiveRole());
-  const [eventConfig, setEventConfig] = useState<EventConfig>(getEventConfig());
-  const [attendees, setAttendees] = useState<AttendeeRegistration[]>(getStoredAttendees());
-  const [officers, setOfficers] = useState<Officer[]>(getStoredOfficers());
-  const [mythicalGroups, setMythicalGroups] = useState<MythicalCreatureGroup[]>(
-    getStoredMythicalGroups()
+  const [currentRole, setCurrentRole] = useState<UserRole>(
+    (authRole?.toUpperCase() as UserRole) || 'STUDENT'
   );
 
-  // Sync state on mount and sub-section change
-  const refreshData = () => {
-    setEventConfig(getEventConfig());
-    setAttendees(getStoredAttendees());
-    setOfficers(getStoredOfficers());
-    setMythicalGroups(getStoredMythicalGroups());
-  };
+  // Firestore raw states
+  const [rawUsers, setRawUsers] = useState<UserDoc[]>([]);
+  const [rawSettings, setRawSettings] = useState<EventSettingsDoc | null>(null);
+  const [rawGroups, setRawGroups] = useState<GroupDoc[]>([]);
+  const [rawAttendees, setRawAttendees] = useState<AttendeeDoc[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
+  // Sync with authRole when it changes
   useEffect(() => {
-    refreshData();
-  }, [activeSubSection]);
+    if (authRole) {
+      setCurrentRole(authRole.toUpperCase() as UserRole);
+    }
+  }, [authRole]);
 
-  // Handle Role Switching
-  const handleRoleChange = (newRole: UserRole) => {
-    setActiveRole(newRole);
-    setCurrentRole(newRole);
+  // Real-time subscriptions to Firestore
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    // Initial fetch
+    Promise.all([
+      getUsers(),
+      getEventSettings(),
+      getGroups(),
+      getAttendees(),
+    ]).then(([u, s, g, a]) => {
+      setRawUsers(u);
+      setRawSettings(s);
+      setRawGroups(g);
+      setRawAttendees(a);
+      setLoading(false);
+    }).catch((err) => {
+      console.error('Failed to load initial admin data from Firestore:', err);
+      setLoading(false);
+    });
+
+    const unsubUsers = subscribeToUsers((u) => setRawUsers(u));
+    const unsubSettings = subscribeToEventSettings((s) => setRawSettings(s));
+    const unsubGroups = subscribeToGroups((g) => setRawGroups(g));
+    const unsubAttendees = subscribeToAttendees((a) => setRawAttendees(a));
+
+    return () => {
+      unsubUsers();
+      unsubSettings();
+      unsubGroups();
+      unsubAttendees();
+    };
+  }, [user]);
+
+  // Mapped entities
+  const officers: Officer[] = rawUsers
+    .filter((u) => u.role === 'admin' || u.role === 'officer')
+    .map((u) => ({
+      id: u.uid,
+      name: u.name,
+      email: u.email,
+      role: (u.role.toUpperCase() as 'ADMIN' | 'OFFICER'),
+      status: (u.status as 'ACTIVE' | 'DISABLED') || 'ACTIVE',
+      dateCreated: u.createdAt,
+      lastLogin: u.lastLoginAt || 'NEVER',
+    }));
+
+  const eventConfig: EventConfig = {
+    eventName: rawSettings?.eventName || 'PSITS ACQUAINTANCE PARTY 2026',
+    tagline: rawSettings?.tagline || 'COLLEGE OF COMPUTER STUDIES // 12 MYTHICAL CREATURES',
+    eventDate: rawSettings?.eventDate || '2026-09-18',
+    callTime: rawSettings?.callTime || '17:00',
+    venue: rawSettings?.venue || 'Main Auditorium',
+    registrationOpeningDate: rawSettings?.registrationOpenDate || '2026-08-20',
+    registrationClosingDate: rawSettings?.registrationCloseDate || '2026-10-20',
+    earlyBirdFee: rawSettings?.earlyBirdPrice || 350,
+    regularFee: rawSettings?.regularPrice || 450,
+    registrationStatus: rawSettings?.registrationStatus || 'OPEN',
+    currency: 'PHP',
+    department: 'CCS Department',
+    college: 'College of Computer Studies',
   };
+
+  const mythicalGroups: MythicalCreatureGroup[] = rawGroups.map((g) => {
+    const memberCount = rawAttendees.filter((a) => {
+      const gid = (a.groupId || '').toLowerCase();
+      return gid === g.id.toLowerCase() || gid === g.name.toLowerCase();
+    }).length;
+
+    return {
+      id: g.id,
+      name: g.name,
+      displayName: g.name,
+      tagline: g.tagline || '',
+      element: g.element || '',
+      itSpecialty: g.itSpecialty || '',
+      color: g.color || '#FFD93D',
+      accentColor: '#000000',
+      bgTexture: 'grid',
+      description: g.tagline || '',
+      mythLore: '',
+      memberCount,
+      maxCapacity: 60,
+      symbol: g.symbol || '⚡',
+      traits: g.traits || [],
+      isActive: g.active !== false,
+    };
+  });
+
+  const attendees: AttendeeRegistration[] = rawAttendees.map((a) => ({
+    id: a.id,
+    studentId: a.studentId,
+    fullName: a.name,
+    section: a.section,
+    yearLevel: a.year as AttendeeRegistration['yearLevel'],
+    course: a.course,
+    registrationType: a.registrationType,
+    amount: a.actualAmount,
+    expectedAmount: a.expectedAmount,
+    actualAmount: a.actualAmount,
+    paymentStatus: a.paymentStatus,
+    datePaid: a.datePaid,
+    groupAssignment: a.groupId,
+    registeredAt: a.registeredAt,
+    status: (a.paymentStatus === 'PAID' ? 'CONFIRMED' : 'PENDING') as any,
+  }));
 
   // Metrics computation
   const totalAttendees = attendees.length;
@@ -104,51 +214,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const regularCount = attendees.filter((a) => a.registrationType === 'REGULAR').length;
   const totalGroups = mythicalGroups.length; // Exactly 12
   const activeOfficersCount = officers.filter((o) => o.status === 'ACTIVE').length;
-  const totalRevenue = calculateTotalRevenue(attendees);
+  const totalRevenue = attendees.reduce(
+    (sum, a) => sum + (a.actualAmount || 0),
+    0
+  );
 
-  // Officer management handlers
-  const handleAddOfficer = (data: { name: string; email: string; role: 'ADMIN' | 'OFFICER' }) => {
-    addOfficer(data);
-    setOfficers(getStoredOfficers());
+  // Officer management handlers in Firestore
+  const handleAddOfficer = async (data: { name: string; email: string; password?: string; role: 'ADMIN' | 'OFFICER' }) => {
+    if (!data.password) throw new Error('An initial password is required.');
+    await createOfficerWithPassword({
+      name: data.name,
+      email: data.email,
+      password: data.password,
+      role: data.role.toLowerCase() as 'admin' | 'officer',
+    });
   };
 
-  const handleUpdateOfficer = (updated: Officer) => {
-    updateOfficer(updated);
-    setOfficers(getStoredOfficers());
+  const handleUpdateOfficer = async (updated: Officer) => {
+    try {
+      await updateOfficerFirestore({
+        uid: updated.id,
+        name: updated.name,
+        email: updated.email,
+        role: updated.role.toLowerCase() as 'admin' | 'officer',
+        status: updated.status,
+        createdAt: updated.dateCreated || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastLoginAt: updated.lastLogin || 'NEVER',
+      });
+    } catch (err) {
+      console.error('Failed to update officer in Firestore:', err);
+    }
   };
 
-  const handleDeleteOfficer = (id: string) => {
-    deleteOfficer(id);
-    setOfficers(getStoredOfficers());
+  const handleDeleteOfficer = async (id: string) => {
+    try {
+      await deleteOfficerFirestore(id);
+    } catch (err) {
+      console.error('Failed to delete officer from Firestore:', err);
+    }
   };
 
-  const handleToggleOfficerStatus = (id: string) => {
-    toggleOfficerStatus(id);
-    setOfficers(getStoredOfficers());
+  const handleToggleOfficerStatus = async (id: string) => {
+    try {
+      await toggleOfficerStatusFirestore(id);
+    } catch (err) {
+      console.error('Failed to toggle officer status in Firestore:', err);
+    }
   };
 
-  const handleChangeOfficerRole = (id: string, newRole: 'ADMIN' | 'OFFICER') => {
-    changeOfficerRole(id, newRole);
-    setOfficers(getStoredOfficers());
+  const handleChangeOfficerRole = async (id: string, newRole: 'ADMIN' | 'OFFICER') => {
+    try {
+      await changeOfficerRoleFirestore(id, newRole.toLowerCase() as 'admin' | 'officer');
+    } catch (err) {
+      console.error('Failed to change officer role in Firestore:', err);
+    }
   };
 
-  // Settings & Group handlers
-  const handleSaveConfig = (newConfig: EventConfig) => {
-    saveEventConfig(newConfig);
-    setEventConfig(newConfig);
+  // Settings & Group handlers in Firestore
+  const handleSaveConfig = async (newConfig: EventConfig) => {
+    await updateEventSettings({
+      eventName: newConfig.eventName,
+      tagline: newConfig.tagline,
+      eventDate: newConfig.eventDate,
+      callTime: newConfig.callTime,
+      venue: newConfig.venue,
+      registrationOpenDate: newConfig.registrationOpeningDate,
+      registrationCloseDate: newConfig.registrationClosingDate,
+      earlyBirdPrice: newConfig.earlyBirdFee,
+      regularPrice: newConfig.regularFee,
+      registrationStatus: newConfig.registrationStatus,
+      currency: newConfig.currency,
+    }, user?.email || 'admin');
   };
 
-  const handleUpdateGroup = (
+  const handleUpdateGroup = async (
     groupId: string,
     updates: { displayName?: string; color?: string; isActive?: boolean }
   ) => {
-    updateGroupConfig(groupId, updates);
-    setMythicalGroups(getStoredMythicalGroups());
+    try {
+      await updateGroupConfigFirestore(groupId, {
+        name: updates.displayName,
+        color: updates.color,
+        active: updates.isActive,
+      });
+    } catch (err) {
+      console.error('Failed to update group in Firestore:', err);
+    }
   };
 
-  const handleResetGroupDefaults = () => {
-    const fresh = resetGroupConfig();
-    setMythicalGroups(fresh);
+  const handleResetGroupDefaults = async () => {
+    try {
+      await resetGroupsToDefault();
+    } catch (err) {
+      console.error('Failed to reset groups in Firestore:', err);
+    }
   };
 
   // Check if access is allowed
@@ -157,7 +317,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fadeIn">
-      {/* 1. ROLE TEST & SIMULATION BANNER */}
+      {/* Authenticated role context */}
       <div className="bg-[#FFFDF5] border-4 border-black p-4 shadow-[6px_6px_0px_#000000] flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-black text-[#FFD93D] flex items-center justify-center border-2 border-black">
@@ -165,7 +325,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
           <div>
             <div className="font-mono text-[10px] font-black uppercase text-gray-500">
-              SIMULATED AUTHORIZATION CONTEXT // FIREBASE READINESS
+              FIREBASE AUTHORIZATION CONTEXT
             </div>
             <div className="font-mono text-xs font-black text-black uppercase flex items-center gap-2">
               <span>CURRENT ACTIVE ROLE:</span>
@@ -184,42 +344,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
-        {/* 1-Click Role Switcher */}
-        <div className="flex items-center gap-2 font-mono text-xs font-black">
-          <span className="text-gray-600 uppercase text-[11px] mr-1 hidden sm:inline">
-            TEST ROLES:
-          </span>
-          <button
-            onClick={() => handleRoleChange('ADMIN')}
-            className={`px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000000] uppercase cursor-pointer transition-all ${
-              currentRole === 'ADMIN'
-                ? 'bg-black text-[#FFD93D]'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
-          >
-            ADMIN (FULL)
-          </button>
-          <button
-            onClick={() => handleRoleChange('OFFICER')}
-            className={`px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000000] uppercase cursor-pointer transition-all ${
-              currentRole === 'OFFICER'
-                ? 'bg-black text-[#FFD93D]'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
-          >
-            OFFICER (OPERATIONAL)
-          </button>
-          <button
-            onClick={() => handleRoleChange('STUDENT')}
-            className={`px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000000] uppercase cursor-pointer transition-all ${
-              currentRole === 'STUDENT'
-                ? 'bg-black text-[#FFD93D]'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
-          >
-            STUDENT
-          </button>
-        </div>
       </div>
 
       {/* Access Denied Card if current role is STUDENT */}
@@ -235,9 +359,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             The <strong>PSITS CONTROL CENTER</strong> is reserved for authorized committee officers and administrators. As a student, your access is limited to registration, attendee search, and creature group rosters.
           </p>
           <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
-            <Button variant="primary" size="md" onClick={() => handleRoleChange('ADMIN')}>
-              SWITCH ROLE TO ADMIN
-            </Button>
             <Button variant="outline" size="md" onClick={onNavigateToHome}>
               RETURN TO EVENT HOME
             </Button>
@@ -548,50 +669,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* SYSTEM HEALTH & AUDIT STATUS */}
-              <div className="bg-[#FFFDF5] border-4 border-black p-5 shadow-[6px_6px_0px_#000000] font-mono text-xs space-y-3">
-                <div className="flex items-center justify-between border-b-2 border-black/20 pb-2">
-                  <div className="font-black uppercase text-black flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                    <span>SYSTEM RUNTIME STATUS & ARCHITECTURE READINESS</span>
-                  </div>
-                  <span className="bg-[#FFD93D] text-black px-2 py-0.5 font-black text-[10px]">
-                    STATUS: OPTIMAL
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                  <div className="p-3 bg-white border-2 border-black">
-                    <span className="text-gray-500 uppercase text-[10px] block font-bold">
-                      DATA PERSISTENCE TIER
-                    </span>
-                    <span className="font-black text-black">MOCK / LOCALSTORAGE V4</span>
-                    <p className="text-[10px] text-gray-600 mt-1">
-                      Ready for seamless migration to Cloud Firestore schemas in the upcoming Firebase phase.
-                    </p>
-                  </div>
-
-                  <div className="p-3 bg-white border-2 border-black">
-                    <span className="text-gray-500 uppercase text-[10px] block font-bold">
-                      RBAC ENFORCEMENT
-                    </span>
-                    <span className="font-black text-black">FRONTEND UI MECHANISM</span>
-                    <p className="text-[10px] text-gray-600 mt-1">
-                      Enforces UX boundaries; server-side security rules will lock down Firestore collections.
-                    </p>
-                  </div>
-
-                  <div className="p-3 bg-white border-2 border-black">
-                    <span className="text-gray-500 uppercase text-[10px] block font-bold">
-                      PRICE MANAGEMENT AUDIT
-                    </span>
-                    <span className="font-black text-black">IMMUTABLE HISTORICAL LEDGER</span>
-                    <p className="text-[10px] text-gray-600 mt-1">
-                      Price changes apply solely to future registrations, protecting past financial records.
-                    </p>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 

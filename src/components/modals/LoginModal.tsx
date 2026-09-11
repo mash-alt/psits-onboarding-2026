@@ -39,7 +39,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
           : 'PSITS CCS DEPARTMENT // COLLEGE OF COMPUTER STUDIES'
       }
       badge="SECURITY GATE"
-      headerVariant="black"
+      headerVariant="yellow"
       maxWidth="md"
     >
       {isSuccess ? (

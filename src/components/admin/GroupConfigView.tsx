@@ -217,7 +217,7 @@ export const GroupConfigView: React.FC<GroupConfigViewProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={group.displayName || group.name}
+                    value={group.displayName ?? group.name}
                     onChange={(e) => handleDisplayNameChange(group.id, e.target.value)}
                     disabled={!isAdmin}
                     className="w-full bg-[#FFFDF5] border-2 border-black px-2.5 py-1.5 text-xs font-black uppercase shadow-[2px_2px_0px_#000000] focus:outline-none focus:bg-white disabled:bg-gray-100"
